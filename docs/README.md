@@ -25,10 +25,10 @@ Step-by-step documentation explaining **how** to perform common tasks.
 
 | Document | Description |
 |----------|-------------|
+| [ENVIRONMENT_SETUP_GUIDE.md](guides/ENVIRONMENT_SETUP_GUIDE.md) | Power Platform environments, PAC CLI, service principals |
 | GETTING_STARTED_GUIDE.md | New developer onboarding (planned) |
 | MAKING_CHANGES_GUIDE.md | Day-to-day development workflow (planned) |
 | DEPLOYING_CHANGES_GUIDE.md | How deployments work (planned) |
-| ENVIRONMENT_SETUP_GUIDE.md | Configuring environments and secrets (planned) |
 
 ---
 

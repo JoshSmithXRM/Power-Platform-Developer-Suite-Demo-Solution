@@ -26,8 +26,8 @@ This demo solution showcases Power Platform ALM patterns with **one example of e
 | Strategy docs | Done | ALM, Environment, Branching, Pipeline |
 | CI/CD: Dev to QA | Done | export-solution.yml |
 | Branching (develop/main) | Done | Feature branch workflow |
-| CI/CD: QA to Prod | In Progress | deploy-to-prod.yml |
-| Environment setup guide | Pending | How to configure GitHub environments |
+| CI/CD: QA to Prod | Done | deploy-to-prod.yml |
+| Environment setup guide | Done | docs/guides/ENVIRONMENT_SETUP_GUIDE.md |
 | Getting started guide | Pending | Clone, configure, deploy |
 
 ---
