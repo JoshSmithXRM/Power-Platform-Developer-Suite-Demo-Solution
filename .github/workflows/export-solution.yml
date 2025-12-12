@@ -37,10 +37,10 @@ on:
   schedule:
     - cron: '0 2 * * *'
 
-  # Deploy to QA when changes are pushed to main
+  # Deploy to QA when changes are pushed to develop
   push:
     branches:
-      - main
+      - develop
     paths:
       - 'solutions/PPDSDemo/src/**'
 
@@ -175,7 +175,7 @@ jobs:
             git diff --cached --name-only
           fi
 
-      - name: Commit changes to main
+      - name: Commit changes to develop
         if: steps.changes.outputs.has_changes == 'true' && (github.event.inputs.create_pr != 'true' || github.event_name == 'schedule')
         run: |
           git config user.name "github-actions[bot]"
@@ -216,7 +216,7 @@ jobs:
   # ===========================================================================
   deploy-to-qa:
     needs: [export-from-dev]
-    # Run if: push to main with solution changes, OR manual deploy action
+    # Run if: push to develop with solution changes, OR manual deploy action
     # Also run if export was skipped (for push events)
     if: |
       always() &&
@@ -234,10 +234,10 @@ jobs:
         uses: actions/checkout@v6
         with:
           # Ensure we have the latest changes (in case export job pushed)
-          ref: main
+          ref: develop
 
       - name: Pull latest changes
-        run: git pull origin main
+        run: git pull origin develop
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
