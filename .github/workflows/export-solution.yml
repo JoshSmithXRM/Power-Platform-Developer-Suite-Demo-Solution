@@ -1,83 +1,66 @@
 # =============================================================================
-# Export Solution from Dataverse
+# Power Platform Solution CI/CD Pipeline
 # =============================================================================
-# This workflow exports the PPDSDemo solution from Dataverse and commits
-# the unpacked source files to the repository.
-#
-# Schedule: Runs nightly at 2 AM UTC (can also be triggered manually)
+# This workflow handles the full ALM cycle:
+# 1. Export solution from Dev environment (CI)
+# 2. Deploy managed solution to QA environment (CD)
 #
 # =============================================================================
-# SETUP INSTRUCTIONS
+# GITHUB ENVIRONMENTS REQUIRED
 # =============================================================================
 #
-# 1. CREATE AN APP REGISTRATION (SERVICE PRINCIPAL) IN AZURE AD
-#    -------------------------------------------------------------
-#    a. Go to Azure Portal > Azure Active Directory > App registrations
-#    b. Click "New registration"
-#    c. Name: "Power Platform GitHub Actions" (or similar)
-#    d. Supported account types: "Accounts in this organizational directory only"
-#    e. Redirect URI: Leave blank
-#    f. Click "Register"
+# Dev Environment:
+#   Variables:
+#     - POWERPLATFORM_ENVIRONMENT_URL: https://orgXXXXX.crm.dynamics.com/
+#     - POWERPLATFORM_TENANT_ID: your-tenant-id
+#     - POWERPLATFORM_CLIENT_ID: your-service-principal-app-id
+#   Secrets:
+#     - POWERPLATFORM_CLIENT_SECRET: your-service-principal-secret
 #
-#    After creation:
-#    g. Copy the "Application (client) ID" - this is your CLIENT_ID
-#    h. Copy the "Directory (tenant) ID" - this is your TENANT_ID
-#
-# 2. CREATE A CLIENT SECRET
-#    -----------------------
-#    a. In your App registration, go to "Certificates & secrets"
-#    b. Click "New client secret"
-#    c. Description: "GitHub Actions"
-#    d. Expiry: Choose appropriate duration (recommend 12-24 months)
-#    e. Click "Add"
-#    f. IMMEDIATELY copy the "Value" - this is your CLIENT_SECRET
-#       (You won't be able to see it again!)
-#
-# 3. GRANT POWER PLATFORM PERMISSIONS
-#    ---------------------------------
-#    a. Go to Power Platform Admin Center (admin.powerplatform.microsoft.com)
-#    b. Select your environment (e.g., CRM384216)
-#    c. Click "Settings" > "Users + permissions" > "Application users"
-#    d. Click "New app user"
-#    e. Click "Add an app" and search for your app registration name
-#    f. Select your Business Unit (usually the root)
-#    g. Click "Edit security roles" and assign "System Administrator"
-#       (or a custom role with solution export permissions)
-#    h. Click "Create"
-#
-# 4. CONFIGURE GITHUB ENVIRONMENT VARIABLES AND SECRETS
-#    ----------------------------------------------------
-#    Go to your GitHub repo > Settings > Environments > DemoDev
-#
-#    Add these as ENVIRONMENT VARIABLES (visible, non-sensitive):
-#    - POWERPLATFORM_TENANT_ID      : Your Azure AD Tenant ID
-#    - POWERPLATFORM_CLIENT_ID      : Your App Registration Client ID
-#    - POWERPLATFORM_ENVIRONMENT_URL: Your Dataverse URL
-#                                     (e.g., https://org7a4a0326.crm.dynamics.com)
-#
-#    Add this as an ENVIRONMENT SECRET (encrypted, sensitive):
-#    - POWERPLATFORM_CLIENT_SECRET  : Your App Registration Client Secret
+# QA Environment:
+#   Variables:
+#     - POWERPLATFORM_ENVIRONMENT_URL: https://orgYYYYY.crm.dynamics.com/
+#     - POWERPLATFORM_TENANT_ID: your-tenant-id
+#     - POWERPLATFORM_CLIENT_ID: your-service-principal-app-id
+#   Secrets:
+#     - POWERPLATFORM_CLIENT_SECRET: your-service-principal-secret
 #
 # =============================================================================
 
-name: Export Solution from Dataverse
+name: Power Platform CI/CD
 
 on:
-  # Run nightly at 2 AM UTC
+  # Run nightly at 2 AM UTC (export from Dev)
   schedule:
     - cron: '0 2 * * *'
 
-  # Allow manual trigger from GitHub UI
+  # Deploy to QA when changes are pushed to main
+  push:
+    branches:
+      - main
+    paths:
+      - 'solutions/PPDSDemo/src/**'
+
+  # Allow manual trigger
   workflow_dispatch:
     inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'export-and-deploy'
+        type: choice
+        options:
+          - 'export-only'
+          - 'deploy-only'
+          - 'export-and-deploy'
       solution_name:
-        description: 'Solution unique name to export'
+        description: 'Solution unique name'
         required: true
         default: 'PPDSDemo'
       create_pr:
-        description: 'Create a pull request with changes'
-        required: true
-        default: 'true'
+        description: 'Create PR for export changes (only for export actions)'
+        required: false
+        default: 'false'
         type: choice
         options:
           - 'true'
@@ -89,43 +72,43 @@ env:
   SOLUTION_EXPORT_FOLDER: solutions/exports
 
 jobs:
-  export-solution:
+  # ===========================================================================
+  # EXPORT JOB - Export unmanaged solution from Dev
+  # ===========================================================================
+  export-from-dev:
+    if: >
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' && (
+        github.event.inputs.action == 'export-only' ||
+        github.event.inputs.action == 'export-and-deploy'
+      )
     runs-on: windows-latest
-    environment: DemoDev
+    environment: Dev
 
     permissions:
       contents: write
       pull-requests: write
 
+    outputs:
+      has_changes: ${{ steps.changes.outputs.has_changes }}
+
     steps:
-      # -----------------------------------------------------------------------
-      # Checkout repository
-      # -----------------------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # -----------------------------------------------------------------------
-      # Install Power Platform CLI
-      # -----------------------------------------------------------------------
       - name: Install Power Platform Tools
-        uses: microsoft/powerplatform-actions/actions-install@v1
+        uses: microsoft/powerplatform-actions/actions-install@v1.5.3
 
-      # -----------------------------------------------------------------------
-      # Verify connection to Power Platform
-      # -----------------------------------------------------------------------
-      - name: Who Am I
-        uses: microsoft/powerplatform-actions/who-am-i@v1
+      - name: Who Am I (Dev)
+        uses: microsoft/powerplatform-actions/who-am-i@v1.5.3
         with:
           environment-url: ${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}
           tenant-id: ${{ vars.POWERPLATFORM_TENANT_ID }}
           app-id: ${{ vars.POWERPLATFORM_CLIENT_ID }}
           client-secret: ${{ secrets.POWERPLATFORM_CLIENT_SECRET }}
 
-      # -----------------------------------------------------------------------
-      # Export solution from Dataverse (unmanaged)
-      # -----------------------------------------------------------------------
-      - name: Export Solution
-        uses: microsoft/powerplatform-actions/export-solution@v1
+      - name: Export Solution (Unmanaged)
+        uses: microsoft/powerplatform-actions/export-solution@v1.5.3
         with:
           environment-url: ${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}
           tenant-id: ${{ vars.POWERPLATFORM_TENANT_ID }}
@@ -135,28 +118,19 @@ jobs:
           solution-output-file: ${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}.zip
           managed: false
 
-      # -----------------------------------------------------------------------
-      # Unpack solution to source control friendly format
-      # -----------------------------------------------------------------------
       - name: Unpack Solution
-        uses: microsoft/powerplatform-actions/unpack-solution@v1
+        uses: microsoft/powerplatform-actions/unpack-solution@v1.5.3
         with:
           solution-file: ${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}.zip
           solution-folder: ${{ env.SOLUTION_FOLDER }}
           solution-type: 'Unmanaged'
           overwrite-files: true
 
-      # -----------------------------------------------------------------------
-      # Clean up zip file (not needed in source control)
-      # -----------------------------------------------------------------------
       - name: Clean up export zip
         run: |
           Remove-Item -Path "${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}.zip" -Force -ErrorAction SilentlyContinue
         shell: pwsh
 
-      # -----------------------------------------------------------------------
-      # Check for changes
-      # -----------------------------------------------------------------------
       - name: Check for changes
         id: changes
         run: |
@@ -172,15 +146,12 @@ jobs:
           }
         shell: pwsh
 
-      # -----------------------------------------------------------------------
-      # Commit directly to main (when create_pr is false or on schedule)
-      # -----------------------------------------------------------------------
       - name: Commit changes to main
-        if: steps.changes.outputs.has_changes == 'true' && (github.event.inputs.create_pr == 'false' || github.event_name == 'schedule')
+        if: steps.changes.outputs.has_changes == 'true' && (github.event.inputs.create_pr != 'true' || github.event_name == 'schedule')
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: sync solution from Dataverse
+          git commit -m "chore: sync solution from Dev environment
 
           Automated export from ${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}
           Solution: ${{ env.SOLUTION_NAME }}
@@ -188,22 +159,19 @@ jobs:
           git push
         shell: pwsh
 
-      # -----------------------------------------------------------------------
-      # Create Pull Request (when create_pr is true on manual trigger)
-      # -----------------------------------------------------------------------
       - name: Create Pull Request
-        if: steps.changes.outputs.has_changes == 'true' && github.event.inputs.create_pr == 'true' && github.event_name == 'workflow_dispatch'
+        if: steps.changes.outputs.has_changes == 'true' && github.event.inputs.create_pr == 'true'
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: 'chore: sync solution from Dataverse'
+          commit-message: 'chore: sync solution from Dev environment'
           branch: solution-export/${{ github.run_id }}
           delete-branch: true
-          title: 'chore: sync ${{ env.SOLUTION_NAME }} solution from Dataverse'
+          title: 'chore: sync ${{ env.SOLUTION_NAME }} solution from Dev'
           body: |
             ## Automated Solution Export
 
-            This PR contains changes exported from Dataverse.
+            This PR contains changes exported from the Dev environment.
 
             - **Environment:** ${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}
             - **Solution:** ${{ env.SOLUTION_NAME }}
@@ -214,3 +182,78 @@ jobs:
           labels: |
             automated
             solution-sync
+
+  # ===========================================================================
+  # DEPLOY JOB - Deploy managed solution to QA
+  # ===========================================================================
+  deploy-to-qa:
+    needs: [export-from-dev]
+    # Run if: push to main with solution changes, OR manual deploy action
+    # Also run if export was skipped (for push events)
+    if: |
+      always() &&
+      (needs.export-from-dev.result == 'success' || needs.export-from-dev.result == 'skipped') &&
+      (
+        github.event_name == 'push' ||
+        (github.event_name == 'workflow_dispatch' &&
+         (github.event.inputs.action == 'deploy-only' || github.event.inputs.action == 'export-and-deploy'))
+      )
+    runs-on: windows-latest
+    environment: QA
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Ensure we have the latest changes (in case export job pushed)
+          ref: main
+
+      - name: Pull latest changes
+        run: git pull origin main
+        shell: pwsh
+
+      - name: Install Power Platform Tools
+        uses: microsoft/powerplatform-actions/actions-install@v1.5.3
+
+      - name: Who Am I (QA)
+        uses: microsoft/powerplatform-actions/who-am-i@v1.5.3
+        with:
+          environment-url: ${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}
+          tenant-id: ${{ vars.POWERPLATFORM_TENANT_ID }}
+          app-id: ${{ vars.POWERPLATFORM_CLIENT_ID }}
+          client-secret: ${{ secrets.POWERPLATFORM_CLIENT_SECRET }}
+
+      - name: Pack Solution (Managed)
+        uses: microsoft/powerplatform-actions/pack-solution@v1.5.3
+        with:
+          solution-folder: ${{ env.SOLUTION_FOLDER }}
+          solution-file: ${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}_managed.zip
+          solution-type: Managed
+
+      - name: Import Solution to QA (Managed)
+        uses: microsoft/powerplatform-actions/import-solution@v1.5.3
+        with:
+          environment-url: ${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}
+          tenant-id: ${{ vars.POWERPLATFORM_TENANT_ID }}
+          app-id: ${{ vars.POWERPLATFORM_CLIENT_ID }}
+          client-secret: ${{ secrets.POWERPLATFORM_CLIENT_SECRET }}
+          solution-file: ${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}_managed.zip
+          force-overwrite: true
+          publish-changes: true
+
+      - name: Clean up
+        run: |
+          Remove-Item -Path "${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}_managed.zip" -Force -ErrorAction SilentlyContinue
+        shell: pwsh
+
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Complete" >> $env:GITHUB_STEP_SUMMARY
+          echo "" >> $env:GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $env:GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $env:GITHUB_STEP_SUMMARY
+          echo "| Solution | ${{ env.SOLUTION_NAME }} |" >> $env:GITHUB_STEP_SUMMARY
+          echo "| Target | QA (${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}) |" >> $env:GITHUB_STEP_SUMMARY
+          echo "| Type | Managed |" >> $env:GITHUB_STEP_SUMMARY
+          echo "| Triggered by | ${{ github.event_name }} |" >> $env:GITHUB_STEP_SUMMARY
+        shell: pwsh
