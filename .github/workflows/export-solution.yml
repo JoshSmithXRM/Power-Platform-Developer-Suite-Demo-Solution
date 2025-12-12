@@ -71,7 +71,7 @@ on:
 
 env:
   SOLUTION_NAME: ${{ github.event.inputs.solution_name || 'PPDSDemo' }}
-  SOLUTION_FOLDER: solutions/PPDSDemo/src
+  SOLUTION_BASE_FOLDER: solutions/PPDSDemo/src
   SOLUTION_EXPORT_FOLDER: solutions/exports
 
 jobs:
@@ -120,25 +120,47 @@ jobs:
       - name: Verify connection (Who Am I)
         run: pac org who
 
+      - name: Publish customizations
+        run: pac solution publish
+
       - name: Export Solution (Unmanaged)
         run: |
           mkdir -p "${{ env.SOLUTION_EXPORT_FOLDER }}"
           pac solution export \
             --name "${{ env.SOLUTION_NAME }}" \
-            --path "${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}.zip" \
+            --path "${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}_unmanaged.zip" \
             --managed false \
             --async
 
-      - name: Unpack Solution
+      - name: Export Solution (Managed)
+        run: |
+          pac solution export \
+            --name "${{ env.SOLUTION_NAME }}" \
+            --path "${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}_managed.zip" \
+            --managed true \
+            --async
+
+      - name: Unpack Solution (Unmanaged)
         run: |
           pac solution unpack \
-            --zipfile "${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}.zip" \
-            --folder "${{ env.SOLUTION_FOLDER }}" \
+            --zipfile "${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}_unmanaged.zip" \
+            --folder "${{ env.SOLUTION_BASE_FOLDER }}/Unmanaged" \
             --processCanvasApps \
             --allowDelete
 
-      - name: Clean up export zip
-        run: rm -f "${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}.zip"
+      - name: Unpack Solution (Managed)
+        run: |
+          pac solution unpack \
+            --zipfile "${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}_managed.zip" \
+            --folder "${{ env.SOLUTION_BASE_FOLDER }}/Managed" \
+            --packagetype Managed \
+            --processCanvasApps \
+            --allowDelete
+
+      - name: Clean up export zips
+        run: |
+          rm -f "${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}_unmanaged.zip"
+          rm -f "${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}_managed.zip"
 
       - name: Check for changes
         id: changes
@@ -243,7 +265,7 @@ jobs:
           mkdir -p "${{ env.SOLUTION_EXPORT_FOLDER }}"
           pac solution pack \
             --zipfile "${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}_managed.zip" \
-            --folder "${{ env.SOLUTION_FOLDER }}" \
+            --folder "${{ env.SOLUTION_BASE_FOLDER }}/Managed" \
             --packagetype Managed
 
       - name: Import Solution to QA (Managed)
