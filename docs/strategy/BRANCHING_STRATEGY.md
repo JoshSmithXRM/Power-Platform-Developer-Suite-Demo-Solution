@@ -190,6 +190,86 @@ sequenceDiagram
 
 ---
 
+## Merge Strategy
+
+We use different merge strategies for different branch flows to optimize history clarity.
+
+### Squash Merge: Feature → Develop
+
+**Use squash merge** when merging feature branches into `develop`.
+
+```
+feature/add-validation (12 commits) → develop (1 squashed commit)
+```
+
+**Why squash:**
+| Reason | Explanation |
+|--------|-------------|
+| Clean history | Feature branches have noisy commits ("WIP", "fix typo", "try again") |
+| Atomic features | Each feature = one commit, easy to identify and revert |
+| Power Platform | Solution exports create many small commits; squashing cleans this up |
+| PR preserves detail | Granular commits still visible in closed PR if needed |
+
+**GitHub setting:** Repository Settings → Pull Requests → Allow squash merging ✓
+
+---
+
+### Regular Merge: Develop → Main
+
+**Use regular merge** (merge commit) when merging `develop` into `main`.
+
+```
+develop → main (merge commit preserves all feature commits)
+```
+
+**Why regular merge:**
+| Reason | Explanation |
+|--------|-------------|
+| Preserves features | Each squashed feature commit flows through to main |
+| Release boundaries | Merge commit marks exactly when a release happened |
+| Traceability | "Prod broke" → Which release? → Which feature? → Easy to trace |
+| Selective revert | Can revert one feature without reverting entire release |
+
+**GitHub setting:** Repository Settings → Pull Requests → Allow merge commits ✓
+
+---
+
+### Why NOT Squash Both Ways?
+
+If you squash `develop` → `main`:
+
+```
+❌ BAD: Squash develop to main
+main:
+├── Release 5 (one giant commit with 10 features mixed together)
+├── Release 4 (one giant commit with 8 features)
+└── Release 3 (one giant commit)
+
+Problems:
+- "Which feature broke prod?" - Can't tell, all mixed together
+- "Revert just account validation" - Can't, it's mixed with other features
+- Loss of audit trail
+```
+
+```
+✅ GOOD: Regular merge develop to main
+main:
+├── Merge develop → main (Release 5)
+│   ├── feat: add account validation
+│   ├── feat: new contact form
+│   └── fix: workflow error
+├── Merge develop → main (Release 4)
+│   ├── feat: dashboard updates
+│   └── feat: reporting changes
+
+Benefits:
+- Clear release boundaries (merge commits)
+- Feature-level granularity preserved
+- Can revert specific features OR entire releases
+```
+
+---
+
 ## Branch Protection Rules
 
 ### `main` Branch

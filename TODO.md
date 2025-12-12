@@ -4,7 +4,7 @@ Tracking document for documentation and implementation tasks.
 
 ---
 
-## Phase 1: Documentation Foundation (Current)
+## Phase 1: Documentation Foundation
 
 ### Strategy Documents
 
@@ -13,59 +13,88 @@ Tracking document for documentation and implementation tasks.
 | `docs/README.md` | ✅ Complete | Navigation hub, links to all documentation |
 | `docs/strategy/ALM_OVERVIEW.md` | ✅ Complete | High-level ALM philosophy and principles |
 | `docs/strategy/ENVIRONMENT_STRATEGY.md` | ✅ Complete | Dev/QA/Prod environments, mapping to branches |
-| `docs/strategy/BRANCHING_STRATEGY.md` | ✅ Complete | develop/main workflow, PR process |
+| `docs/strategy/BRANCHING_STRATEGY.md` | ✅ Complete | develop/main workflow, PR process, merge strategy |
 | `docs/strategy/PIPELINE_STRATEGY.md` | ✅ Complete | CI/CD approach, PAC CLI, extensibility |
-| `docs/strategy/SOLUTION_STRATEGY.md` | Pending | Solution architecture (future - when needed) |
 
 ### Configuration
 
 | Task | Status | Description |
 |------|--------|-------------|
 | Update CLAUDE.md | ✅ Complete | Add documentation style guide section |
-| Create develop branch | Pending | Implement branching strategy |
+
+---
+
+## Phase 1.5: Branching Implementation (Current)
+
+| Task | Status | Description |
+|------|--------|-------------|
+| Update BRANCHING_STRATEGY.md | Pending | Add squash/merge strategy section |
+| Create working branch | Pending | Move current work off main |
+| Reset main to initial state | Pending | Clean slate for proper flow |
+| Create develop branch | Pending | From reset main |
 | Update workflows for develop/main | Pending | Modify CI/CD for new branching |
+| PR working branch → develop | Pending | Showcase PR workflow |
+| PR develop → main | Pending | Showcase release workflow |
 
 ---
 
-## Phase 2: Implementation Guides (After Branching Implementation)
+## Phase 2: Implementation Guides
 
 | Document | Status | Description |
 |----------|--------|-------------|
-| `docs/guides/GETTING_STARTED.md` | Pending | New developer onboarding |
-| `docs/guides/MAKING_CHANGES.md` | Pending | Day-to-day development workflow |
-| `docs/guides/DEPLOYING_CHANGES.md` | Pending | How deployments work |
-| `docs/guides/ENVIRONMENT_SETUP.md` | Pending | Configuring environments and secrets |
+| `docs/guides/GETTING_STARTED_GUIDE.md` | Pending | New developer onboarding |
+| `docs/guides/MAKING_CHANGES_GUIDE.md` | Pending | Day-to-day development workflow |
+| `docs/guides/DEPLOYING_CHANGES_GUIDE.md` | Pending | How deployments work |
+| `docs/guides/ENVIRONMENT_SETUP_GUIDE.md` | Pending | Configuring GitHub environments and secrets |
+| `docs/guides/CREATING_NEW_SOLUTION_GUIDE.md` | Pending | Adding solutions to this pattern |
 
 ---
 
-## Phase 3: Pipeline Documentation (As We Expand)
+## Phase 3: Pipeline Expansion
 
-| Document | Status | Description |
-|----------|--------|-------------|
-| `docs/pipelines/PIPELINE_OVERVIEW.md` | Pending | Architecture and design |
-| `docs/pipelines/CUSTOMIZATION.md` | Pending | How to extend/modify |
+| Document/Task | Status | Description |
+|---------------|--------|-------------|
+| `docs/pipelines/PIPELINE_OVERVIEW.md` | Pending | Detailed pipeline architecture |
+| `docs/pipelines/CUSTOMIZATION_GUIDE.md` | Pending | How to extend/modify pipelines |
+| `.github/workflows/deploy-to-prod.yml` | Pending | Production deployment workflow |
+| `.github/workflows/validate-pr.yml` | Pending | PR validation pipeline |
 | `docs/pipelines/templates/README.md` | Pending | Reusable pipeline templates |
+| Multi-solution deployment template | Pending | Ordered deployment for dependent solutions |
 
 ---
 
-## Phase 4: Reference Material (As Needed)
+## Phase 4: Reference Material
 
 | Document | Status | Description |
 |----------|--------|-------------|
-| `docs/reference/NAMING_CONVENTIONS.md` | Pending | Standards for everything |
-| `docs/reference/PAC_CLI_REFERENCE.md` | Pending | Common PAC CLI commands |
-| `docs/reference/TROUBLESHOOTING.md` | Pending | Common issues and solutions |
+| `docs/reference/NAMING_CONVENTIONS_REFERENCE.md` | Pending | Standards for branches, solutions, environments |
+| `docs/reference/PAC_CLI_REFERENCE.md` | Pending | Common PAC CLI commands with examples |
+| `docs/reference/TROUBLESHOOTING_REFERENCE.md` | Pending | Common issues and solutions |
 
 ---
 
-## Future Considerations
+## Phase 5: Strategy Documents (Future)
 
-- Multi-solution strategy documentation (when solution layering is needed)
-- Environment provisioning automation guide
-- Personal Developer Environment (PDE) guide
-- Power Platform Pipelines integration guide (hybrid approach)
-- Data migration patterns
-- Canvas app source control considerations
+| Document | Status | Description |
+|----------|--------|-------------|
+| `docs/strategy/SOLUTION_STRATEGY.md` | Pending | Multi-solution architecture, layering, dependencies |
+| `docs/strategy/SECURITY_STRATEGY.md` | Pending | Service principals, roles, least privilege |
+| `docs/strategy/DATA_STRATEGY.md` | Pending | Reference data migration, test data |
+
+---
+
+## Future Considerations (Not Scheduled)
+
+These are topics we may document when the need arises:
+
+- **Personal Developer Environments (PDE)** - Per-developer isolated environments
+- **Power Platform Pipelines integration** - Hybrid approach with native Pipelines
+- **Environment provisioning automation** - Automated environment creation/teardown
+- **Canvas app source control** - Handling canvas app merge challenges
+- **Solution Checker integration** - Automated quality gates in CI/CD
+- **Approval gates** - Manual approval workflows for production
+- **Rollback automation** - Quick rollback procedures on failure
+- **ALM Accelerator comparison** - When to use ALM Accelerator vs this pattern
 
 ---
 
