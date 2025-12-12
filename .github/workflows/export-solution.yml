@@ -1,0 +1,210 @@
+# =============================================================================
+# Export Solution from Dataverse
+# =============================================================================
+# This workflow exports the PPDSDemo solution from Dataverse and commits
+# the unpacked source files to the repository.
+#
+# Schedule: Runs nightly at 2 AM UTC (can also be triggered manually)
+#
+# =============================================================================
+# SETUP INSTRUCTIONS
+# =============================================================================
+#
+# 1. CREATE AN APP REGISTRATION (SERVICE PRINCIPAL) IN AZURE AD
+#    -------------------------------------------------------------
+#    a. Go to Azure Portal > Azure Active Directory > App registrations
+#    b. Click "New registration"
+#    c. Name: "Power Platform GitHub Actions" (or similar)
+#    d. Supported account types: "Accounts in this organizational directory only"
+#    e. Redirect URI: Leave blank
+#    f. Click "Register"
+#
+#    After creation:
+#    g. Copy the "Application (client) ID" - this is your CLIENT_ID
+#    h. Copy the "Directory (tenant) ID" - this is your TENANT_ID
+#
+# 2. CREATE A CLIENT SECRET
+#    -----------------------
+#    a. In your App registration, go to "Certificates & secrets"
+#    b. Click "New client secret"
+#    c. Description: "GitHub Actions"
+#    d. Expiry: Choose appropriate duration (recommend 12-24 months)
+#    e. Click "Add"
+#    f. IMMEDIATELY copy the "Value" - this is your CLIENT_SECRET
+#       (You won't be able to see it again!)
+#
+# 3. GRANT POWER PLATFORM PERMISSIONS
+#    ---------------------------------
+#    a. Go to Power Platform Admin Center (admin.powerplatform.microsoft.com)
+#    b. Select your environment (e.g., CRM384216)
+#    c. Click "Settings" > "Users + permissions" > "Application users"
+#    d. Click "New app user"
+#    e. Click "Add an app" and search for your app registration name
+#    f. Select your Business Unit (usually the root)
+#    g. Click "Edit security roles" and assign "System Administrator"
+#       (or a custom role with solution export permissions)
+#    h. Click "Create"
+#
+# 4. CONFIGURE GITHUB ENVIRONMENT VARIABLES AND SECRETS
+#    ----------------------------------------------------
+#    Go to your GitHub repo > Settings > Environments > DemoDev
+#
+#    Add these as ENVIRONMENT VARIABLES (visible, non-sensitive):
+#    - POWERPLATFORM_TENANT_ID      : Your Azure AD Tenant ID
+#    - POWERPLATFORM_CLIENT_ID      : Your App Registration Client ID
+#    - POWERPLATFORM_ENVIRONMENT_URL: Your Dataverse URL
+#                                     (e.g., https://org7a4a0326.crm.dynamics.com)
+#
+#    Add this as an ENVIRONMENT SECRET (encrypted, sensitive):
+#    - POWERPLATFORM_CLIENT_SECRET  : Your App Registration Client Secret
+#
+# =============================================================================
+
+name: Export Solution from Dataverse
+
+on:
+  # Run nightly at 2 AM UTC
+  schedule:
+    - cron: '0 2 * * *'
+
+  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      solution_name:
+        description: 'Solution unique name to export'
+        required: true
+        default: 'PPDSDemo'
+      create_pr:
+        description: 'Create a pull request with changes'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+env:
+  SOLUTION_NAME: ${{ github.event.inputs.solution_name || 'PPDSDemo' }}
+  SOLUTION_FOLDER: solutions/PPDSDemo/src
+  SOLUTION_EXPORT_FOLDER: solutions/exports
+
+jobs:
+  export-solution:
+    runs-on: windows-latest
+    environment: DemoDev
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Checkout repository
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # Verify connection to Power Platform
+      # -----------------------------------------------------------------------
+      - name: Who Am I
+        uses: microsoft/powerplatform-actions/who-am-i@v1
+        with:
+          environment-url: ${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}
+          tenant-id: ${{ vars.POWERPLATFORM_TENANT_ID }}
+          app-id: ${{ vars.POWERPLATFORM_CLIENT_ID }}
+          client-secret: ${{ secrets.POWERPLATFORM_CLIENT_SECRET }}
+
+      # -----------------------------------------------------------------------
+      # Export solution from Dataverse (unmanaged)
+      # -----------------------------------------------------------------------
+      - name: Export Solution
+        uses: microsoft/powerplatform-actions/export-solution@v1
+        with:
+          environment-url: ${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}
+          tenant-id: ${{ vars.POWERPLATFORM_TENANT_ID }}
+          app-id: ${{ vars.POWERPLATFORM_CLIENT_ID }}
+          client-secret: ${{ secrets.POWERPLATFORM_CLIENT_SECRET }}
+          solution-name: ${{ env.SOLUTION_NAME }}
+          solution-output-file: ${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}.zip
+          managed: false
+
+      # -----------------------------------------------------------------------
+      # Unpack solution to source control friendly format
+      # -----------------------------------------------------------------------
+      - name: Unpack Solution
+        uses: microsoft/powerplatform-actions/unpack-solution@v1
+        with:
+          solution-file: ${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}.zip
+          solution-folder: ${{ env.SOLUTION_FOLDER }}
+          solution-type: 'Both'
+          overwrite-files: true
+
+      # -----------------------------------------------------------------------
+      # Clean up zip file (not needed in source control)
+      # -----------------------------------------------------------------------
+      - name: Clean up export zip
+        run: |
+          Remove-Item -Path "${{ env.SOLUTION_EXPORT_FOLDER }}/${{ env.SOLUTION_NAME }}.zip" -Force -ErrorAction SilentlyContinue
+        shell: pwsh
+
+      # -----------------------------------------------------------------------
+      # Check for changes
+      # -----------------------------------------------------------------------
+      - name: Check for changes
+        id: changes
+        run: |
+          git add -A
+          $changes = git diff --cached --name-only
+          if ($changes) {
+            echo "has_changes=true" >> $env:GITHUB_OUTPUT
+            echo "Changes detected:"
+            echo $changes
+          } else {
+            echo "has_changes=false" >> $env:GITHUB_OUTPUT
+            echo "No changes detected"
+          }
+        shell: pwsh
+
+      # -----------------------------------------------------------------------
+      # Commit directly to main (when create_pr is false or on schedule)
+      # -----------------------------------------------------------------------
+      - name: Commit changes to main
+        if: steps.changes.outputs.has_changes == 'true' && (github.event.inputs.create_pr == 'false' || github.event_name == 'schedule')
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: sync solution from Dataverse
+
+          Automated export from ${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}
+          Solution: ${{ env.SOLUTION_NAME }}
+          Triggered by: ${{ github.event_name }}"
+          git push
+        shell: pwsh
+
+      # -----------------------------------------------------------------------
+      # Create Pull Request (when create_pr is true on manual trigger)
+      # -----------------------------------------------------------------------
+      - name: Create Pull Request
+        if: steps.changes.outputs.has_changes == 'true' && github.event.inputs.create_pr == 'true' && github.event_name == 'workflow_dispatch'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore: sync solution from Dataverse'
+          branch: solution-export/${{ github.run_id }}
+          delete-branch: true
+          title: 'chore: sync ${{ env.SOLUTION_NAME }} solution from Dataverse'
+          body: |
+            ## Automated Solution Export
+
+            This PR contains changes exported from Dataverse.
+
+            - **Environment:** ${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}
+            - **Solution:** ${{ env.SOLUTION_NAME }}
+            - **Triggered by:** Manual workflow dispatch
+            - **Run ID:** ${{ github.run_id }}
+
+            Please review the changes before merging.
+          labels: |
+            automated
+            solution-sync
