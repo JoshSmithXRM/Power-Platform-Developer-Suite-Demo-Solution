@@ -531,6 +531,128 @@ refactor: extract discount calculation service
 
 ---
 
+## Documentation Standards
+
+This section defines how documentation is written in this repository.
+
+### File Naming Convention
+
+**Pattern:** `{TOPIC}_{TYPE}.md` in SCREAMING_SNAKE_CASE
+
+**Types:**
+| Suffix | Purpose | Example |
+|--------|---------|---------|
+| `_GUIDE.md` | How-to, workflow, step-by-step | `GETTING_STARTED_GUIDE.md` |
+| `_PATTERNS.md` | Reusable solutions, best practices | `DEPLOYMENT_PATTERNS.md` |
+| `_REFERENCE.md` | Quick lookup, specifications | `PAC_CLI_REFERENCE.md` |
+| `_STRATEGY.md` | Decision documentation, rationale | `ENVIRONMENT_STRATEGY.md` |
+| `_OVERVIEW.md` | High-level introduction | `ALM_OVERVIEW.md` |
+
+**Folder names:** lowercase (`docs/strategy/`, `docs/guides/`)
+
+**Examples:**
+```
+✅ GOOD:
+docs/strategy/ENVIRONMENT_STRATEGY.md
+docs/guides/GETTING_STARTED_GUIDE.md
+docs/reference/PAC_CLI_REFERENCE.md
+
+❌ BAD:
+docs/strategy/environment-strategy.md    # Not SCREAMING_SNAKE
+docs/guides/GettingStarted.md            # Wrong format
+docs/SETUP.md                            # Missing type suffix
+```
+
+### Document Structure
+
+**All documents MUST have:**
+
+```markdown
+# Document Title
+
+[Brief 1-2 sentence overview]
+
+## 🚀 Quick Reference (if >400 lines)
+[Scannable bullets, tables, key concepts]
+
+## 📖 Detailed Content
+[Main content sections]
+
+## 🔗 See Also
+- [Related Doc](link)
+```
+
+**Required elements:**
+- Brief overview in first paragraph
+- "See Also" section with cross-references (always last)
+- Quick Reference section (if document exceeds 400 lines)
+
+### Diagrams
+
+**Use Mermaid** for flow diagrams (renders natively in GitHub):
+
+```mermaid
+graph LR
+    DEV[Dev] -->|export| develop[develop branch]
+    develop -->|deploy| QA[QA]
+    develop -->|PR| main[main branch]
+    main -->|deploy| PROD[Prod]
+```
+
+**Use ASCII** only for very simple inline concepts.
+
+### Content Guidelines
+
+**DO:**
+- Be concise (1-2 pages per strategy doc)
+- Focus on decisions and rationale
+- Link to Microsoft docs for deep dives (don't duplicate)
+- Use tables for comparisons and specifications
+- Show ✅/❌ examples for patterns
+- Explain "why" for non-obvious choices
+
+**DON'T:**
+- Add dates to documents (use git history)
+- Duplicate content across docs (link instead)
+- Write long prose when a table suffices
+- Use toy examples ("foo", "bar")
+
+### Tone
+
+- **Direct** - State decisions clearly ("We use X" not "One might consider X")
+- **Opinionated** - This is reference architecture; own the decisions
+- **Practical** - Focus on what to do, not theory
+- **Professional** - No jokes or excessive casualness
+
+### Version References
+
+- Document patterns version-agnostically in prose
+- Note specific versions in a "Tested With" section when relevant
+- Use semantic version ranges in examples (`@v4` not `@v4.2.1`)
+
+### Documentation Index
+
+All documentation lives in `docs/` with this structure:
+
+```
+docs/
+├── README.md                    # Navigation hub
+├── strategy/                    # Decision documentation ("why")
+│   ├── ALM_OVERVIEW.md
+│   ├── ENVIRONMENT_STRATEGY.md
+│   ├── BRANCHING_STRATEGY.md
+│   └── PIPELINE_STRATEGY.md
+├── guides/                      # How-to documentation
+│   ├── GETTING_STARTED_GUIDE.md
+│   └── DEPLOYING_CHANGES_GUIDE.md
+├── pipelines/                   # Pipeline-specific docs
+│   └── PIPELINE_OVERVIEW.md
+└── reference/                   # Quick-reference material
+    └── PAC_CLI_REFERENCE.md
+```
+
+---
+
 ## References
 
 ### Official Documentation
