@@ -305,17 +305,20 @@ function Get-WebApiBaseUrl {
 # =============================================================================
 
 # When dot-sourced, all functions are available
-# This section is for potential future module conversion
+# Export-ModuleMember is only used when imported as a module
+# When dot-sourced (. script.ps1), functions are automatically available
 
-Export-ModuleMember -Function @(
-    'Write-Log',
-    'Write-Success',
-    'Write-Warning-Log',
-    'Write-Error-Log',
-    'Write-Debug-Log',
-    'Import-EnvFile',
-    'Get-EnvVar',
-    'Get-DataverseConnection',
-    'Get-AuthHeaders',
-    'Get-WebApiBaseUrl'
-) -ErrorAction SilentlyContinue
+if ($MyInvocation.Line -match 'Import-Module') {
+    Export-ModuleMember -Function @(
+        'Write-Log',
+        'Write-Success',
+        'Write-Warning-Log',
+        'Write-Error-Log',
+        'Write-Debug-Log',
+        'Import-EnvFile',
+        'Get-EnvVar',
+        'Get-DataverseConnection',
+        'Get-AuthHeaders',
+        'Get-WebApiBaseUrl'
+    )
+}

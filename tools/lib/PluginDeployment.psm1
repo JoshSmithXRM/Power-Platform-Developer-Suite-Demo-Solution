@@ -680,6 +680,35 @@ function Get-PluginAssembly {
     return $result.value | Select-Object -First 1
 }
 
+function Get-PluginPackage {
+    <#
+    .SYNOPSIS
+        Gets a plugin package record by name (for NuGet-based plugins).
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ApiUrl,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $filter = "`$filter=name eq '$Name'"
+    $select = "`$select=pluginpackageid,name,version"
+    try {
+        $result = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "pluginpackages?$filter&$select" -Method GET
+        return $result.value | Select-Object -First 1
+    }
+    catch {
+        # Plugin packages may not exist in older environments
+        Write-PluginDebug "Could not query plugin packages: $($_.Exception.Message)"
+        return $null
+    }
+}
+
 function Get-PluginType {
     <#
     .SYNOPSIS
@@ -822,7 +851,7 @@ function Get-StepImages {
     )
 
     $filter = "`$filter=_sdkmessageprocessingstepid_value eq '$StepId'"
-    $select = "`$select=sdkmessageprocessingstepimageid,name,entityalias,imagetype,attributes1"
+    $select = "`$select=sdkmessageprocessingstepimageid,name,entityalias,imagetype,attributes"
     $result = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessageprocessingstepimages?$filter&$select" -Method GET
     return $result.value
 }
@@ -957,11 +986,12 @@ function New-StepImage {
         name = $ImageData.Name
         entityalias = $ImageData.EntityAlias
         imagetype = $ImageData.ImageType
+        messagepropertyname = "Target"  # Required - specifies which message parameter to capture
         "sdkmessageprocessingstepid@odata.bind" = "/sdkmessageprocessingsteps($($ImageData.StepId))"
     }
 
     if ($ImageData.Attributes) {
-        $body.attributes1 = $ImageData.Attributes
+        $body.attributes = $ImageData.Attributes
     }
 
     return Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessageprocessingstepimages" -Method POST -Body $body -WhatIf:$WhatIf
@@ -995,7 +1025,7 @@ function Update-StepImage {
     }
 
     if ($ImageData.Attributes) {
-        $body.attributes1 = $ImageData.Attributes
+        $body.attributes = $ImageData.Attributes
     }
 
     return Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessageprocessingstepimages($ImageId)" -Method PATCH -Body $body -WhatIf:$WhatIf
@@ -1030,7 +1060,7 @@ function Remove-StepImage {
 function Deploy-PluginAssembly {
     <#
     .SYNOPSIS
-        Deploys a plugin assembly using Web API (for new) or PAC CLI (for updates).
+        Deploys a plugin assembly or package using Web API (for new) or PAC CLI (for updates).
     #>
     param(
         [Parameter(Mandatory = $true)]
@@ -1058,76 +1088,137 @@ function Deploy-PluginAssembly {
         return $null
     }
 
-    # Check if assembly already exists
-    $existingAssembly = Get-PluginAssembly -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Name $AssemblyName
+    # Handle NuGet packages differently from assemblies
+    if ($Type -eq "Nuget") {
+        # Check if plugin package already exists
+        $existingPackage = Get-PluginPackage -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Name $AssemblyName
 
-    if ($existingAssembly) {
-        # Update existing assembly using PAC CLI
-        Write-PluginLog "Updating existing assembly: $AssemblyName"
-        $pluginId = $existingAssembly.pluginassemblyid
+        if ($existingPackage) {
+            # Update existing package using PAC CLI
+            Write-PluginLog "Updating existing plugin package: $AssemblyName"
+            $packageId = $existingPackage.pluginpackageid
 
-        if ($WhatIf) {
-            Write-PluginLog "[WhatIf] pac plugin push --pluginId $pluginId --pluginFile $Path"
-            return $existingAssembly
-        }
+            if ($WhatIf) {
+                Write-PluginLog "[WhatIf] pac plugin push --pluginId $packageId --pluginFile $Path"
+                return $existingPackage
+            }
 
-        $result = pac plugin push --pluginId $pluginId --pluginFile $Path 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-PluginError "Failed to update assembly: $result"
-            return $null
-        }
-        Write-PluginSuccess "Assembly updated successfully"
-        return $existingAssembly
-    }
-    else {
-        # Register new assembly using Web API
-        Write-PluginLog "Registering new assembly: $AssemblyName"
+            $result = pac plugin push --pluginId $packageId --pluginFile $Path 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-PluginError "Failed to update plugin package: $result"
+                return $null
+            }
+            Write-PluginSuccess "Plugin package updated successfully"
 
-        if ($WhatIf) {
-            Write-PluginLog "[WhatIf] Would register new assembly via Web API"
-            return $null
-        }
-
-        # Read assembly bytes and convert to base64
-        $bytes = [System.IO.File]::ReadAllBytes($Path)
-        $content = [System.Convert]::ToBase64String($bytes)
-
-        # Get assembly metadata via reflection
-        try {
-            $assembly = [System.Reflection.Assembly]::LoadFrom($Path)
-            $assemblyName = $assembly.GetName()
-            $version = $assemblyName.Version.ToString()
-            $culture = if ($assemblyName.CultureInfo.Name) { $assemblyName.CultureInfo.Name } else { "neutral" }
-            $publicKeyToken = [System.BitConverter]::ToString($assemblyName.GetPublicKeyToken()).Replace("-", "").ToLower()
-            if (-not $publicKeyToken) { $publicKeyToken = "null" }
-        }
-        catch {
-            Write-PluginWarning "Could not read assembly metadata: $($_.Exception.Message)"
-            $version = "1.0.0.0"
-            $culture = "neutral"
-            $publicKeyToken = "null"
-        }
-
-        $body = @{
-            name = $AssemblyName
-            content = $content
-            isolationmode = 2  # Sandbox
-            sourcetype = 0     # Database
-            version = $version
-            culture = $culture
-            publickeytoken = $publicKeyToken
-        }
-
-        try {
-            $response = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "pluginassemblies" -Method POST -Body $body
-            Write-PluginSuccess "Assembly registered successfully"
-
-            # Return the newly created assembly
+            # Return the assembly record for step registration
+            # (plugin packages have assemblies inside them that we need for steps)
             return Get-PluginAssembly -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Name $AssemblyName
         }
-        catch {
-            Write-PluginError "Failed to register assembly: $($_.Exception.Message)"
-            return $null
+        else {
+            # Register new plugin package using Web API
+            Write-PluginLog "Registering new plugin package: $AssemblyName"
+
+            if ($WhatIf) {
+                Write-PluginLog "[WhatIf] Would register new plugin package via Web API"
+                return $null
+            }
+
+            # Read NuGet package bytes and convert to base64
+            $bytes = [System.IO.File]::ReadAllBytes($Path)
+            $content = [System.Convert]::ToBase64String($bytes)
+
+            $body = @{
+                name = $AssemblyName
+                content = $content
+                version = "1.0.0"  # Default version, NuGet package has its own versioning
+            }
+
+            try {
+                $response = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "pluginpackages" -Method POST -Body $body
+                Write-PluginSuccess "Plugin package registered successfully"
+
+                # Return the assembly record for step registration
+                # (plugin packages have assemblies inside them that we need for steps)
+                return Get-PluginAssembly -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Name $AssemblyName
+            }
+            catch {
+                Write-PluginError "Failed to register plugin package: $($_.Exception.Message)"
+                return $null
+            }
+        }
+    }
+    else {
+        # Handle classic assemblies
+        $existingAssembly = Get-PluginAssembly -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Name $AssemblyName
+
+        if ($existingAssembly) {
+            # Update existing assembly using PAC CLI
+            Write-PluginLog "Updating existing assembly: $AssemblyName"
+            $pluginId = $existingAssembly.pluginassemblyid
+
+            if ($WhatIf) {
+                Write-PluginLog "[WhatIf] pac plugin push --pluginId $pluginId --pluginFile $Path"
+                return $existingAssembly
+            }
+
+            $result = pac plugin push --pluginId $pluginId --pluginFile $Path 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-PluginError "Failed to update assembly: $result"
+                return $null
+            }
+            Write-PluginSuccess "Assembly updated successfully"
+            return $existingAssembly
+        }
+        else {
+            # Register new assembly using Web API
+            Write-PluginLog "Registering new assembly: $AssemblyName"
+
+            if ($WhatIf) {
+                Write-PluginLog "[WhatIf] Would register new assembly via Web API"
+                return $null
+            }
+
+            # Read assembly bytes and convert to base64
+            $bytes = [System.IO.File]::ReadAllBytes($Path)
+            $content = [System.Convert]::ToBase64String($bytes)
+
+            # Get assembly metadata via reflection
+            try {
+                $assembly = [System.Reflection.Assembly]::LoadFrom($Path)
+                $assemblyName = $assembly.GetName()
+                $version = $assemblyName.Version.ToString()
+                $culture = if ($assemblyName.CultureInfo.Name) { $assemblyName.CultureInfo.Name } else { "neutral" }
+                $publicKeyToken = [System.BitConverter]::ToString($assemblyName.GetPublicKeyToken()).Replace("-", "").ToLower()
+                if (-not $publicKeyToken) { $publicKeyToken = "null" }
+            }
+            catch {
+                Write-PluginWarning "Could not read assembly metadata: $($_.Exception.Message)"
+                $version = "1.0.0.0"
+                $culture = "neutral"
+                $publicKeyToken = "null"
+            }
+
+            $body = @{
+                name = $AssemblyName
+                content = $content
+                isolationmode = 2  # Sandbox
+                sourcetype = 0     # Database
+                version = $version
+                culture = $culture
+                publickeytoken = $publicKeyToken
+            }
+
+            try {
+                $response = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "pluginassemblies" -Method POST -Body $body
+                Write-PluginSuccess "Assembly registered successfully"
+
+                # Return the newly created assembly
+                return Get-PluginAssembly -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Name $AssemblyName
+            }
+            catch {
+                Write-PluginError "Failed to register assembly: $($_.Exception.Message)"
+                return $null
+            }
         }
     }
 }
@@ -1151,6 +1242,7 @@ Export-ModuleMember -Function @(
     'Get-DataverseAuthToken'
     'Invoke-DataverseApi'
     'Get-PluginAssembly'
+    'Get-PluginPackage'
     'Get-PluginType'
     'Get-SdkMessage'
     'Get-SdkMessageFilter'
