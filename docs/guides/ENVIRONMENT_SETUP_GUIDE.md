@@ -244,6 +244,7 @@ pac org who
 |-------------|--------|---------|--------------|
 | Dev | powerplatformdevelopersuite.onmicrosoft.com | Active development | `ppds-dev` |
 | QA | powerplatformdevelopersuite.onmicrosoft.com | Testing & validation | `ppds-qa` |
+| Prod | powerplatformdevelopersuite.onmicrosoft.com | Production deployment | `ppds-prod` |
 | Demo | CRM384216.onmicrosoft.com | Demos & screenshots | `ppds-demo` |
 
 ### Credential Files
@@ -253,6 +254,7 @@ Credentials are stored in environment files (git-ignored):
 ```
 .env.dev      # Dev environment credentials
 .env.qa       # QA environment credentials
+.env.prod     # Prod environment credentials
 .env.demo     # Demo environment credentials
 .env.example  # Template (safe to commit)
 ```
