@@ -972,11 +972,14 @@ function Add-SolutionComponent {
         return $true
     }
 
+    # AddRequiredComponents must be true for PluginType (90) to include parent assembly reference
+    $addRequired = ($ComponentType -eq 90)
+
     $body = @{
         ComponentId = $ComponentId
         ComponentType = $ComponentType
         SolutionUniqueName = $SolutionUniqueName
-        AddRequiredComponents = $false
+        AddRequiredComponents = $addRequired
     }
 
     try {
@@ -1149,6 +1152,9 @@ function Update-StepImage {
     <#
     .SYNOPSIS
         Updates an existing step image.
+    .DESCRIPTION
+        Updates the attributes and entity alias of an existing step image.
+        Note: ImageType cannot be changed after creation - to change it, delete and recreate the image.
     #>
     param(
         [Parameter(Mandatory = $true)]
@@ -1167,9 +1173,10 @@ function Update-StepImage {
         [switch]$WhatIf
     )
 
+    # Note: imagetype is not included in updates - it cannot be changed after creation.
+    # To change image type, the image must be deleted and recreated.
     $body = @{
         entityalias = $ImageData.EntityAlias
-        imagetype = $ImageData.ImageType
     }
 
     if ($ImageData.Attributes) {

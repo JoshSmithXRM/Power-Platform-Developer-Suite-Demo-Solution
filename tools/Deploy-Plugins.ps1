@@ -642,8 +642,19 @@ try {
                     }
 
                     if ($existingImage) {
-                        Write-PluginLog "      Updating existing image..."
-                        if (-not $isWhatIf) {
+                        # Check if anything actually changed before updating
+                        $existingAttrs = if ($existingImage.attributes) { $existingImage.attributes } else { "" }
+                        $configAttrs = if ($imageData.Attributes) { $imageData.Attributes } else { "" }
+                        $existingAlias = if ($existingImage.entityalias) { $existingImage.entityalias } else { "" }
+                        $configAlias = if ($imageData.EntityAlias) { $imageData.EntityAlias } else { "" }
+
+                        $hasChanges = ($existingAttrs -ne $configAttrs) -or ($existingAlias -ne $configAlias)
+
+                        if (-not $hasChanges) {
+                            Write-PluginDebug "      Image unchanged, skipping update"
+                        }
+                        elseif (-not $isWhatIf) {
+                            Write-PluginLog "      Updating existing image..."
                             try {
                                 Update-StepImage -ApiUrl $apiUrl -AuthHeaders $authHeaders -ImageId $existingImage.sdkmessageprocessingstepimageid -ImageData $imageData
                                 $totalImagesUpdated++
