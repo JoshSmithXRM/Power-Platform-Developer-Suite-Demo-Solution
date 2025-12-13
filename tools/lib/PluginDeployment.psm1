@@ -1201,6 +1201,69 @@ function Remove-StepImage {
     return Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessageprocessingstepimages($ImageId)" -Method DELETE -WhatIf:$WhatIf
 }
 
+function New-PluginType {
+    <#
+    .SYNOPSIS
+        Creates a new plugin type for an assembly.
+    .DESCRIPTION
+        Creates a plugin type record in Dataverse. This is needed when new IPlugin
+        classes are added to an existing assembly that was previously deployed.
+        Plugin types are not auto-discovered when updating assemblies via PAC CLI.
+    .PARAMETER ApiUrl
+        Dataverse Web API base URL.
+    .PARAMETER AuthHeaders
+        Authentication headers for API calls.
+    .PARAMETER AssemblyId
+        The GUID of the plugin assembly this type belongs to.
+    .PARAMETER TypeName
+        The full type name (namespace.classname) of the plugin class.
+    .PARAMETER WhatIf
+        If specified, shows what would be created without making changes.
+    .OUTPUTS
+        The created plugin type record, or $null in WhatIf mode.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ApiUrl,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AssemblyId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TypeName,
+
+        [Parameter()]
+        [switch]$WhatIf
+    )
+
+    # Extract class name from full type name for friendly name
+    $friendlyName = $TypeName.Split('.')[-1]
+
+    $body = @{
+        "pluginassemblyid@odata.bind" = "/pluginassemblies($AssemblyId)"
+        typename = $TypeName
+        friendlyname = $friendlyName
+        name = $TypeName
+    }
+
+    if ($WhatIf) {
+        Write-PluginLog "[WhatIf] Would create plugin type: $TypeName"
+        return $null
+    }
+
+    try {
+        $response = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "plugintypes" -Method POST -Body $body
+        return $response
+    }
+    catch {
+        Write-PluginError "Failed to create plugin type '$TypeName': $($_.Exception.Message)"
+        throw
+    }
+}
+
 # =============================================================================
 # Deployment Helper Functions
 # =============================================================================
@@ -1736,6 +1799,7 @@ Export-ModuleMember -Function @(
     'Get-StepImages'
     'Get-Solution'
     'Add-SolutionComponent'
+    'New-PluginType'
     'New-ProcessingStep'
     'Update-ProcessingStep'
     'Remove-ProcessingStep'

@@ -448,17 +448,51 @@ try {
             if (-not $isWhatIf -and $assembly) {
                 try {
                     $pluginType = Get-PluginType -ApiUrl $apiUrl -AuthHeaders $authHeaders -AssemblyId $assembly.pluginassemblyid -TypeName $plugin.typeName
-                    if (-not $pluginType) {
+
+                    # If plugin type not found and this plugin has steps, create it
+                    # Note: Only for classic assemblies - NuGet packages auto-discover plugin types
+                    if (-not $pluginType -and $plugin.steps.Count -gt 0 -and $asmReg.type -eq "Assembly") {
+                        Write-PluginLog "  Registering new plugin type: $($plugin.typeName)"
+                        try {
+                            $pluginType = New-PluginType -ApiUrl $apiUrl -AuthHeaders $authHeaders -AssemblyId $assembly.pluginassemblyid -TypeName $plugin.typeName
+                            if ($pluginType) {
+                                Write-PluginSuccess "  Plugin type created"
+
+                                # Add to solution if specified
+                                if ($solutionUniqueName) {
+                                    Add-SolutionComponent -ApiUrl $apiUrl -AuthHeaders $authHeaders `
+                                        -SolutionUniqueName $solutionUniqueName `
+                                        -ComponentId $pluginType.plugintypeid `
+                                        -ComponentType $ComponentType.PluginType | Out-Null
+                                }
+                            }
+                        }
+                        catch {
+                            Write-PluginError "  Failed to create plugin type: $($_.Exception.Message)"
+                            continue
+                        }
+                    }
+                    elseif (-not $pluginType -and $plugin.steps.Count -gt 0) {
+                        # Plugin type not found but has steps - this is a NuGet package issue
                         Write-PluginWarning "  Plugin type not found: $($plugin.typeName)"
-                        Write-PluginLog "  This may happen if the assembly was just deployed. Try running again."
+                        Write-PluginLog "  NuGet packages should auto-discover plugin types. Try redeploying the package."
                         continue
                     }
+                    elseif (-not $pluginType) {
+                        # No steps defined, nothing to do for this plugin type
+                        Write-PluginDebug "  Plugin type not found (no steps configured, skipping)"
+                        continue
+                    }
+
                     Write-PluginDebug "  Plugin Type ID: $($pluginType.plugintypeid)"
                 }
                 catch {
                     Write-PluginWarning "  Could not query plugin type: $($_.Exception.Message)"
                     continue
                 }
+            }
+            elseif ($isWhatIf -and $plugin.steps.Count -gt 0) {
+                Write-PluginLog "  [WhatIf] Would check/create plugin type if needed"
             }
 
             # Process each step
