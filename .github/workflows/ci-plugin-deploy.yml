@@ -1,0 +1,155 @@
+# =============================================================================
+# CI: Deploy Plugins to Dev
+# =============================================================================
+# Automatically deploys plugin assemblies and registers steps when plugin code
+# changes are pushed to the develop branch.
+#
+# Flow:
+#   1. Build plugin assemblies
+#   2. Extract plugin registrations from compiled DLLs
+#   3. Authenticate to Dev environment
+#   4. Deploy assemblies using PAC CLI
+#   5. Register/update steps using Web API
+#
+# This workflow complements the solution export workflow (ci-export.yml).
+# Changes made here will be captured in the next nightly export.
+#
+# =============================================================================
+# GITHUB ENVIRONMENT REQUIRED
+# =============================================================================
+#
+# Dev Environment:
+#   Variables:
+#     - POWERPLATFORM_ENVIRONMENT_URL: https://orgXXXXX.crm.dynamics.com/
+#     - POWERPLATFORM_TENANT_ID: your-tenant-id
+#     - POWERPLATFORM_CLIENT_ID: your-service-principal-app-id
+#   Secrets:
+#     - POWERPLATFORM_CLIENT_SECRET: your-service-principal-secret
+#
+# =============================================================================
+
+name: 'CI: Deploy Plugins to Dev'
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'src/Plugins/**'
+      - 'src/PluginPackages/**'
+      - 'src/Shared/PPDSDemo.Sdk/**'
+
+  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Specific project to deploy (leave empty for all)'
+        required: false
+        default: ''
+      force:
+        description: 'Remove orphaned steps'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      dry_run:
+        description: 'Dry run (WhatIf mode)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: Dev
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET Framework compatibility
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      # Build plugins
+      - name: Build PPDSDemo.Sdk
+        run: dotnet build src/Shared/PPDSDemo.Sdk/PPDSDemo.Sdk.csproj -c Release --nologo
+
+      - name: Build PPDSDemo.Plugins
+        run: dotnet build src/Plugins/PPDSDemo.Plugins/PPDSDemo.Plugins.csproj -c Release --nologo
+
+      - name: Build PPDSDemo.PluginPackage
+        run: dotnet build src/PluginPackages/PPDSDemo.PluginPackage/PPDSDemo.PluginPackage.csproj -c Release --nologo
+
+      # Extract registrations from compiled assemblies
+      - name: Extract plugin registrations
+        shell: pwsh
+        run: |
+          ./tools/Extract-PluginRegistrations.ps1 -Verbose
+
+      # Setup PAC CLI
+      - name: Setup PAC CLI
+        uses: ./.github/actions/setup-pac-cli
+
+      # Authenticate to Dev environment
+      - name: Authenticate to Dev environment
+        uses: ./.github/actions/pac-auth
+        with:
+          environment-url: ${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}
+          tenant-id: ${{ vars.POWERPLATFORM_TENANT_ID }}
+          client-id: ${{ vars.POWERPLATFORM_CLIENT_ID }}
+          client-secret: ${{ secrets.POWERPLATFORM_CLIENT_SECRET }}
+
+      # Deploy plugins
+      - name: Deploy plugins to Dev
+        shell: pwsh
+        run: |
+          $params = @{
+            Environment = "Dev"
+            Verbose = $true
+          }
+
+          # Add project filter if specified
+          if ("${{ github.event.inputs.project }}") {
+            $params.Project = "${{ github.event.inputs.project }}"
+          }
+
+          # Add Force flag if specified
+          if ("${{ github.event.inputs.force }}" -eq "true") {
+            $params.Force = $true
+          }
+
+          # Add WhatIf flag if dry run
+          if ("${{ github.event.inputs.dry_run }}" -eq "true") {
+            $params.WhatIf = $true
+          }
+
+          ./tools/Deploy-Plugins.ps1 @params
+
+      # Summary
+      - name: Deployment summary
+        run: |
+          echo "## Plugin Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | Dev |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trigger | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "> **Note:** This was a dry run. No changes were made." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The nightly export workflow will capture these registrations in the solution." >> $GITHUB_STEP_SUMMARY
