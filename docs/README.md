@@ -25,8 +25,8 @@ Step-by-step documentation explaining **how** to perform common tasks.
 
 | Document | Description |
 |----------|-------------|
+| [GETTING_STARTED_GUIDE.md](guides/GETTING_STARTED_GUIDE.md) | Clone, configure, and deploy the demo solution |
 | [ENVIRONMENT_SETUP_GUIDE.md](guides/ENVIRONMENT_SETUP_GUIDE.md) | Power Platform environments, PAC CLI, service principals |
-| GETTING_STARTED_GUIDE.md | New developer onboarding (planned) |
 
 ---
 
