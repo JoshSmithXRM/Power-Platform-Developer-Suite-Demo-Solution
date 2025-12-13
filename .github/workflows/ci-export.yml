@@ -198,24 +198,16 @@ jobs:
       - name: Stamp version into Solution.xml
         if: steps.has_changes.outputs.result == 'true'
         run: |
-          # Update version in both Managed and Unmanaged Solution.xml files
+          # Update version in Solution.xml (flat structure from packagetype Both)
           VERSION="${{ steps.version.outputs.new_version }}"
+          SOLUTION_XML="${{ env.SOLUTION_BASE_FOLDER }}/Other/Solution.xml"
 
-          for SOLUTION_XML in "${{ env.SOLUTION_BASE_FOLDER }}/Managed/Other/Solution.xml" "${{ env.SOLUTION_BASE_FOLDER }}/Unmanaged/Other/Solution.xml"; do
-            if [ -f "$SOLUTION_XML" ]; then
-              echo "Updating version in: $SOLUTION_XML"
-              # Use sed to replace the Version tag content
-              sed -i "s|<Version>[^<]*</Version>|<Version>$VERSION</Version>|g" "$SOLUTION_XML"
-              git add "$SOLUTION_XML"
-            fi
-          done
-
-          # Also update root Solution.xml if it exists
-          ROOT_SOLUTION_XML="${{ env.SOLUTION_BASE_FOLDER }}/Other/Solution.xml"
-          if [ -f "$ROOT_SOLUTION_XML" ]; then
-            echo "Updating version in: $ROOT_SOLUTION_XML"
-            sed -i "s|<Version>[^<]*</Version>|<Version>$VERSION</Version>|g" "$ROOT_SOLUTION_XML"
-            git add "$ROOT_SOLUTION_XML"
+          if [ -f "$SOLUTION_XML" ]; then
+            echo "Updating version in: $SOLUTION_XML"
+            sed -i "s|<Version>[^<]*</Version>|<Version>$VERSION</Version>|g" "$SOLUTION_XML"
+            git add "$SOLUTION_XML"
+          else
+            echo "Warning: Solution.xml not found at $SOLUTION_XML"
           fi
 
       - name: Commit changes to develop
