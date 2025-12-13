@@ -103,7 +103,11 @@
         },
         "entity": {
           "type": "string",
-          "description": "Logical name of the entity this step applies to"
+          "description": "Logical name of the primary entity this step applies to"
+        },
+        "secondaryEntity": {
+          "type": ["string", "null"],
+          "description": "Logical name of the secondary entity for relationship messages (Associate, Disassociate)"
         },
         "stage": {
           "type": "string",

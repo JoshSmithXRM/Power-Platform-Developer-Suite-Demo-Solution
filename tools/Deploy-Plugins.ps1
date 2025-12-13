@@ -478,9 +478,19 @@ try {
                             continue
                         }
 
-                        $filter = Get-SdkMessageFilter -ApiUrl $apiUrl -AuthHeaders $authHeaders -MessageId $message.sdkmessageid -EntityLogicalName $step.entity
+                        $filterParams = @{
+                            ApiUrl = $apiUrl
+                            AuthHeaders = $authHeaders
+                            MessageId = $message.sdkmessageid
+                            EntityLogicalName = $step.entity
+                        }
+                        if ($step.secondaryEntity) {
+                            $filterParams["SecondaryEntityLogicalName"] = $step.secondaryEntity
+                        }
+                        $filter = Get-SdkMessageFilter @filterParams
                         if (-not $filter) {
-                            Write-PluginError "    SDK Message Filter not found for: $($step.message) / $($step.entity)"
+                            $entityDesc = if ($step.secondaryEntity) { "$($step.entity) / $($step.secondaryEntity)" } else { $step.entity }
+                            Write-PluginError "    SDK Message Filter not found for: $($step.message) / $entityDesc"
                             continue
                         }
                     }

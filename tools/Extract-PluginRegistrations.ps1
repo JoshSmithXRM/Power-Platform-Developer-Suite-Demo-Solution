@@ -166,17 +166,38 @@ try {
             $totalImages = ($plugins | ForEach-Object { $_.steps | ForEach-Object { $_.images.Count } } | Measure-Object -Sum).Sum
             Write-PluginLog "  Total steps: $totalSteps, Total images: $totalImages"
 
+            # Check for existing registrations.json to preserve solution property
+            $existingJsonPath = Join-Path $proj.ProjectDir "registrations.json"
+            $existingSolution = $null
+            $existingPackagePath = $null
+            if (Test-Path $existingJsonPath) {
+                try {
+                    $existingReg = Read-RegistrationJson -Path $existingJsonPath
+                    if ($existingReg -and $existingReg.assemblies) {
+                        $existingAsm = $existingReg.assemblies | Where-Object { $_.name -eq $proj.Name } | Select-Object -First 1
+                        if ($existingAsm) {
+                            $existingSolution = $existingAsm.solution
+                            $existingPackagePath = $existingAsm.packagePath
+                        }
+                    }
+                } catch {
+                    Write-PluginDebug "  Could not read existing registrations.json: $($_.Exception.Message)"
+                }
+            }
+
             # Create assembly registration object
             $assemblyReg = [PSCustomObject]@{
                 name = $proj.Name
                 type = $proj.Type
+                solution = $existingSolution
                 path = $proj.RelativeDllPath
                 plugins = $plugins
             }
 
-            # Add NuGet package path if applicable
-            if ($proj.Type -eq "Nuget" -and $proj.RelativeNupkgPath) {
-                $assemblyReg | Add-Member -MemberType NoteProperty -Name "packagePath" -Value $proj.RelativeNupkgPath
+            # Add NuGet package path if applicable (preserve existing or use discovered)
+            $packagePath = if ($proj.RelativeNupkgPath) { $proj.RelativeNupkgPath } else { $existingPackagePath }
+            if ($proj.Type -eq "Nuget" -and $packagePath) {
+                $assemblyReg | Add-Member -MemberType NoteProperty -Name "packagePath" -Value $packagePath
             }
 
             # Generate JSON

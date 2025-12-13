@@ -278,6 +278,7 @@ function Get-PluginRegistrations {
                     name = $stepName
                     message = $stepAttr.Message
                     entity = $stepAttr.EntityLogicalName
+                    secondaryEntity = $stepAttr.SecondaryEntityLogicalName
                     stage = $stageName
                     mode = $modeName
                     executionOrder = $stepAttr.ExecutionOrder
@@ -340,6 +341,7 @@ function ConvertTo-RegistrationJson {
                     name = $step.name
                     message = $step.message
                     entity = $step.entity
+                    secondaryEntity = $step.secondaryEntity
                     stage = $step.stage
                     mode = $step.mode
                     executionOrder = $step.executionOrder
@@ -792,12 +794,20 @@ function Get-SdkMessageFilter {
         [string]$MessageId,
 
         [Parameter(Mandatory = $true)]
-        [string]$EntityLogicalName
+        [string]$EntityLogicalName,
+
+        [Parameter()]
+        [string]$SecondaryEntityLogicalName
     )
 
-    $filter = "`$filter=_sdkmessageid_value eq '$MessageId' and primaryobjecttypecode eq '$EntityLogicalName'"
-    $select = "`$select=sdkmessagefilterid"
-    $result = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessagefilters?$filter&$select" -Method GET
+    # Build filter - include secondary entity if provided
+    $filter = "_sdkmessageid_value eq '$MessageId' and primaryobjecttypecode eq '$EntityLogicalName'"
+    if ($SecondaryEntityLogicalName) {
+        $filter += " and secondaryobjecttypecode eq '$SecondaryEntityLogicalName'"
+    }
+
+    $select = "`$select=sdkmessagefilterid,primaryobjecttypecode,secondaryobjecttypecode"
+    $result = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessagefilters?`$filter=$filter&$select" -Method GET
     return $result.value | Select-Object -First 1
 }
 

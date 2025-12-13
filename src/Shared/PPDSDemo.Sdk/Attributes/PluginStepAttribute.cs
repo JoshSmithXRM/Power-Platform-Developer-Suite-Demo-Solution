@@ -31,11 +31,17 @@ namespace PPDSDemo.Sdk
         public string Message { get; set; } = string.Empty;
 
         /// <summary>
-        /// Gets or sets the logical name of the entity this step applies to.
+        /// Gets or sets the logical name of the primary entity this step applies to.
         /// Use "none" for messages that don't require an entity (e.g., WhoAmI).
         /// Required.
         /// </summary>
         public string EntityLogicalName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets the logical name of the secondary entity for relationship-based messages.
+        /// Used with Associate, Disassociate, and SetRelated messages where two entity types are involved.
+        /// </summary>
+        public string? SecondaryEntityLogicalName { get; set; }
 
         /// <summary>
         /// Gets or sets the pipeline stage when this plugin executes.
