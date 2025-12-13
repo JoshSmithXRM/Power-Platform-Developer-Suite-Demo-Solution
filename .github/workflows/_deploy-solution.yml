@@ -5,10 +5,17 @@
 # environment. Called by cd-qa.yml and cd-prod.yml.
 #
 # Features:
+#   - Plugin/code build integration (optional)
 #   - Automatic deployment settings detection per environment
 #   - Version comparison (skip if target has same/newer version)
 #   - Smart retry logic for transient failures
 #   - Detailed deployment summary
+#
+# Plugin Build:
+#   When build-plugins is enabled, the workflow will:
+#   1. Build the .NET solution (plugins, workflow activities, custom APIs)
+#   2. Copy compiled assemblies to solution folder
+#   3. Pack and import the solution with fresh binaries
 #
 # Deployment Settings:
 #   Place environment-specific settings at:
@@ -24,6 +31,7 @@
 #         environment-name: QA
 #         solution-name: PPDSDemo
 #         solution-folder: solutions/PPDSDemo/src/Managed
+#         build-plugins: true
 #         ref: develop
 #       secrets: inherit
 #
@@ -48,6 +56,16 @@ on:
         type: string
       ref:
         description: 'Git ref to checkout (branch, tag, or SHA)'
+        required: false
+        type: string
+        default: ''
+      build-plugins:
+        description: 'Build .NET plugins before packing solution'
+        required: false
+        type: boolean
+        default: false
+      dotnet-solution-path:
+        description: 'Path to .NET solution file (auto-detected if empty)'
         required: false
         type: string
         default: ''
@@ -76,6 +94,9 @@ on:
       version:
         description: 'Version that was deployed'
         value: ${{ jobs.deploy.outputs.version }}
+      build-succeeded:
+        description: 'Whether plugin build succeeded (if enabled)'
+        value: ${{ jobs.deploy.outputs.build_succeeded }}
 
 jobs:
   deploy:
@@ -86,12 +107,61 @@ jobs:
       deployed: ${{ steps.import.outputs.imported }}
       skipped: ${{ steps.import.outputs.skipped }}
       version: ${{ steps.import.outputs.import-version }}
+      build_succeeded: ${{ steps.build.outputs.build-succeeded }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
+
+      # ========================================
+      # Plugin Build (Optional)
+      # ========================================
+
+      - name: Detect .NET solution
+        id: detect-dotnet
+        if: inputs.build-plugins == true
+        run: |
+          # Use provided path or auto-detect
+          if [ -n "${{ inputs.dotnet-solution-path }}" ]; then
+            SLN_PATH="${{ inputs.dotnet-solution-path }}"
+          else
+            # Auto-detect solution file in root
+            SLN_PATH=$(find . -maxdepth 1 -name "*.sln" | head -1 || echo "")
+          fi
+
+          if [ -n "$SLN_PATH" ] && [ -f "$SLN_PATH" ]; then
+            echo "Found .NET solution: $SLN_PATH"
+            echo "solution-path=$SLN_PATH" >> $GITHUB_OUTPUT
+            echo "has-solution=true" >> $GITHUB_OUTPUT
+          else
+            echo "No .NET solution found"
+            echo "has-solution=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build .NET solution
+        id: build
+        if: inputs.build-plugins == true && steps.detect-dotnet.outputs.has-solution == 'true'
+        uses: ./.github/actions/build-solution
+        with:
+          solution-path: ${{ steps.detect-dotnet.outputs.solution-path }}
+          configuration: Release
+          run-tests: 'false'
+
+      - name: Copy plugin assemblies (classic)
+        if: inputs.build-plugins == true && steps.build.outputs.build-succeeded == 'true' && steps.build.outputs.classic-assembly-path != ''
+        uses: ./.github/actions/copy-plugin-assemblies
+        with:
+          source-assembly: ${{ steps.build.outputs.classic-assembly-path }}
+          solution-folder: solutions/${{ inputs.solution-name }}/src
+
+      # Note: Plugin packages (.nupkg) are deployed differently via pac plugin push
+      # For now, we focus on classic assemblies which are included in the solution
+
+      # ========================================
+      # Deployment Settings Detection
+      # ========================================
 
       - name: Detect deployment settings
         id: settings
@@ -119,6 +189,10 @@ jobs:
             echo "has-settings=false" >> $GITHUB_OUTPUT
             echo "No deployment settings file found (optional)"
           fi
+
+      # ========================================
+      # Solution Deployment
+      # ========================================
 
       - name: Setup PAC CLI
         uses: ./.github/actions/setup-pac-cli
@@ -149,6 +223,10 @@ jobs:
           max-retries: ${{ inputs.max-retries }}
           settings-file: ${{ steps.settings.outputs.settings-file }}
 
+      # ========================================
+      # Summary
+      # ========================================
+
       - name: Deployment summary
         run: |
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
@@ -158,6 +236,17 @@ jobs:
           echo "| Solution | ${{ inputs.solution-name }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Target | ${{ inputs.environment-name }} (\`${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}\`) |" >> $GITHUB_STEP_SUMMARY
           echo "| Type | Managed |" >> $GITHUB_STEP_SUMMARY
+
+          # Show build info if enabled
+          if [ "${{ inputs.build-plugins }}" = "true" ]; then
+            if [ "${{ steps.build.outputs.build-succeeded }}" = "true" ]; then
+              echo "| Plugin Build | **Passed** |" >> $GITHUB_STEP_SUMMARY
+            elif [ "${{ steps.detect-dotnet.outputs.has-solution }}" = "false" ]; then
+              echo "| Plugin Build | Skipped (no .sln found) |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| Plugin Build | **Failed** |" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
 
           # Show version info
           if [ -n "${{ steps.import.outputs.import-version }}" ]; then

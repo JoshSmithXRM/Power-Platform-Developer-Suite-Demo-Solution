@@ -1,32 +1,37 @@
 # =============================================================================
 # PR: Validate Solution
 # =============================================================================
-# Validates that the Power Platform solution can be packed successfully and
-# optionally runs the Solution Checker for quality analysis.
+# Validates that the Power Platform solution can be packed successfully,
+# builds and tests .NET code, and optionally runs the Solution Checker.
 #
 # Triggers:
-#   - Pull requests to develop or main that modify solution files
+#   - Pull requests to develop or main that modify solution or code files
 #   - Manual workflow dispatch
 #
 # Validation checks:
+#   - .NET code builds successfully (plugins, workflow activities, etc.)
+#   - Unit tests pass (if present)
 #   - Managed solution can be packed from source
 #   - Unmanaged solution can be packed from source
 #   - (Optional) Solution Checker quality analysis
 #
-# This catches structural and quality issues before they reach QA/Production.
+# This catches code, structural, and quality issues before they reach QA/Production.
 #
 # =============================================================================
 
 name: 'PR: Validate Solution'
 
 on:
-  # Validate PRs that modify solution files
+  # Validate PRs that modify solution or code files
   pull_request:
     branches:
       - develop
       - main
     paths:
       - 'solutions/PPDSDemo/src/**'
+      - 'src/**'
+      - '*.sln'
+      - '**/*.csproj'
 
   # Manual trigger
   workflow_dispatch:
@@ -35,6 +40,22 @@ on:
         description: 'Solution unique name'
         required: true
         default: 'PPDSDemo'
+      build_code:
+        description: 'Build .NET code (plugins, etc.)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      run_tests:
+        description: 'Run unit tests'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
       run_solution_checker:
         description: 'Run Solution Checker analysis'
         required: false
@@ -58,13 +79,64 @@ env:
   SOLUTION_NAME: ${{ github.event.inputs.solution_name || 'PPDSDemo' }}
   SOLUTION_BASE_FOLDER: solutions/PPDSDemo/src
   SOLUTION_EXPORT_FOLDER: solutions/exports
+  BUILD_CODE: ${{ github.event.inputs.build_code || 'true' }}
+  RUN_TESTS: ${{ github.event.inputs.run_tests || 'true' }}
   RUN_CHECKER: ${{ github.event.inputs.run_solution_checker || 'true' }}
   CHECKER_LEVEL: ${{ github.event.inputs.checker_fail_level || 'High' }}
 
 jobs:
-  validate-solution:
-    name: Validate Solution Structure
+  # ============================================
+  # Job 1: Build and Test .NET Code
+  # ============================================
+  build-code:
+    name: Build & Test Code
     runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.build_code != 'false' }}
+
+    outputs:
+      build-succeeded: ${{ steps.build.outputs.build-succeeded }}
+      test-succeeded: ${{ steps.build.outputs.test-succeeded }}
+      classic-assembly: ${{ steps.build.outputs.classic-assembly-path }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Detect .NET solution
+        id: detect
+        run: |
+          SLN_PATH=$(find . -maxdepth 1 -name "*.sln" | head -1 || echo "")
+          if [ -n "$SLN_PATH" ] && [ -f "$SLN_PATH" ]; then
+            echo "Found .NET solution: $SLN_PATH"
+            echo "has-solution=true" >> $GITHUB_OUTPUT
+            echo "solution-path=$SLN_PATH" >> $GITHUB_OUTPUT
+          else
+            echo "No .NET solution found"
+            echo "has-solution=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build .NET solution
+        id: build
+        if: steps.detect.outputs.has-solution == 'true'
+        uses: ./.github/actions/build-solution
+        with:
+          solution-path: ${{ steps.detect.outputs.solution-path }}
+          configuration: Release
+          run-tests: ${{ env.RUN_TESTS }}
+
+      - name: Skip notification
+        if: steps.detect.outputs.has-solution != 'true'
+        run: |
+          echo "::notice::No .NET solution found - skipping code build"
+
+  # ============================================
+  # Job 2: Validate Solution Structure
+  # ============================================
+  validate-solution:
+    name: Validate Solution
+    runs-on: ubuntu-latest
+    needs: [build-code]
+    if: always()
 
     outputs:
       managed-path: ${{ steps.pack-managed.outputs.solution-path }}
@@ -76,6 +148,40 @@ jobs:
 
       - name: Setup PAC CLI
         uses: ./.github/actions/setup-pac-cli
+
+      # Copy built assemblies if build succeeded
+      - name: Setup .NET SDK (for assembly copy)
+        if: needs.build-code.outputs.build-succeeded == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      - name: Build and copy assemblies
+        if: needs.build-code.outputs.build-succeeded == 'true'
+        run: |
+          # Rebuild to get assemblies in this job
+          SLN_PATH=$(find . -maxdepth 1 -name "*.sln" | head -1 || echo "")
+          if [ -n "$SLN_PATH" ]; then
+            dotnet build "$SLN_PATH" --configuration Release --verbosity minimal
+
+            # Find and copy classic assembly
+            CLASSIC_DLL=$(find src/Plugins -name "*.dll" -path "*bin/Release*" -not -name "Microsoft.*" -not -name "System.*" 2>/dev/null | head -1 || echo "")
+            if [ -n "$CLASSIC_DLL" ]; then
+              echo "Found classic assembly: $CLASSIC_DLL"
+
+              # Get target filename (remove dots from assembly name)
+              SOURCE_FILE=$(basename "$CLASSIC_DLL")
+              ASSEMBLY_NAME="${SOURCE_FILE%.dll}"
+              TARGET_NAME=$(echo "$ASSEMBLY_NAME" | tr -d '.').dll
+              FOLDER_PATTERN=$(echo "$ASSEMBLY_NAME" | tr -d '.')
+
+              # Copy to all plugin assembly locations
+              for PLUGIN_FOLDER in $(find ${{ env.SOLUTION_BASE_FOLDER }} -type d -name "${FOLDER_PATTERN}-*" 2>/dev/null); do
+                echo "Copying to: $PLUGIN_FOLDER/$TARGET_NAME"
+                cp "$CLASSIC_DLL" "$PLUGIN_FOLDER/$TARGET_NAME"
+              done
+            fi
+          fi
 
       - name: Validate managed solution can be packed
         id: pack-managed
@@ -141,14 +247,49 @@ jobs:
           echo "## PR Validation Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
+          # Code Build Section
+          echo "### Code Build & Tests" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          BUILD_STATUS="${{ needs.build-code.outputs.build-succeeded }}"
+          TEST_STATUS="${{ needs.build-code.outputs.test-succeeded }}"
+
+          if [ "${{ env.BUILD_CODE }}" = "false" ]; then
+            echo "| .NET Build | Skipped |" >> $GITHUB_STEP_SUMMARY
+          elif [ "$BUILD_STATUS" = "true" ]; then
+            echo "| .NET Build | **Passed** |" >> $GITHUB_STEP_SUMMARY
+          elif [ -z "$BUILD_STATUS" ]; then
+            echo "| .NET Build | Skipped (no .sln) |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| .NET Build | **Failed** |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ env.RUN_TESTS }}" = "false" ]; then
+            echo "| Unit Tests | Skipped |" >> $GITHUB_STEP_SUMMARY
+          elif [ "$TEST_STATUS" = "true" ]; then
+            echo "| Unit Tests | **Passed** |" >> $GITHUB_STEP_SUMMARY
+          elif [ "$TEST_STATUS" = "skipped" ]; then
+            echo "| Unit Tests | Skipped (no tests) |" >> $GITHUB_STEP_SUMMARY
+          elif [ -z "$TEST_STATUS" ]; then
+            echo "| Unit Tests | N/A |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Unit Tests | **Failed** |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Solution Packing Section
           echo "### Solution Packing" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Check | Status | Size |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Pack Managed | Passed | ${{ steps.verify.outputs.managed_size }} bytes |" >> $GITHUB_STEP_SUMMARY
-          echo "| Pack Unmanaged | Passed | ${{ steps.verify.outputs.unmanaged_size }} bytes |" >> $GITHUB_STEP_SUMMARY
+          echo "| Pack Managed | **Passed** | ${{ steps.verify.outputs.managed_size }} bytes |" >> $GITHUB_STEP_SUMMARY
+          echo "| Pack Unmanaged | **Passed** | ${{ steps.verify.outputs.unmanaged_size }} bytes |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
+          # Solution Checker Section
           if [ "${{ env.RUN_CHECKER }}" = "true" ]; then
             echo "### Solution Checker" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
@@ -189,3 +330,33 @@ jobs:
       - name: Clean up
         if: always()
         run: rm -rf ${{ env.SOLUTION_EXPORT_FOLDER }}
+
+  # ============================================
+  # Job 3: Final Status Check
+  # ============================================
+  status-check:
+    name: Validation Status
+    runs-on: ubuntu-latest
+    needs: [build-code, validate-solution]
+    if: always()
+
+    steps:
+      - name: Check overall status
+        run: |
+          BUILD_RESULT="${{ needs.build-code.result }}"
+          VALIDATE_RESULT="${{ needs.validate-solution.result }}"
+
+          echo "Build job result: $BUILD_RESULT"
+          echo "Validate job result: $VALIDATE_RESULT"
+
+          if [ "$BUILD_RESULT" = "failure" ]; then
+            echo "::error::Code build failed"
+            exit 1
+          fi
+
+          if [ "$VALIDATE_RESULT" = "failure" ]; then
+            echo "::error::Solution validation failed"
+            exit 1
+          fi
+
+          echo "All validation checks passed!"
