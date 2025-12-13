@@ -1,4 +1,5 @@
 {
+  "$schema": "https://raw.githubusercontent.com/microsoft/coe-alm-accelerator-templates/main/deployment-settings.schema.json",
   "_comment": "Production Environment Deployment Settings for PPDSDemo Solution",
   "_instructions": [
     "This file configures environment-specific values for the Production deployment.",
