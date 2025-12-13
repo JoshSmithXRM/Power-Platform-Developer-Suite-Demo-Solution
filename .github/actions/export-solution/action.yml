@@ -63,8 +63,7 @@ runs:
           --name "${{ inputs.solution-name }}" \
           --path "${{ inputs.temp-folder }}/${{ inputs.solution-name }}.zip" \
           --managed false \
-          --overwrite \
-          --async
+          --overwrite
 
     - name: Export managed solution
       shell: bash
@@ -74,8 +73,7 @@ runs:
           --name "${{ inputs.solution-name }}" \
           --path "${{ inputs.temp-folder }}/${{ inputs.solution-name }}_managed.zip" \
           --managed true \
-          --overwrite \
-          --async
+          --overwrite
 
     - name: Unpack with packagetype Both
       shell: bash

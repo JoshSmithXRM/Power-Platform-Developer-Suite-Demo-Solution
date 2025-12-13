@@ -178,21 +178,21 @@ runs:
         echo "Found test projects:"
         echo "$TEST_PROJECTS"
 
-        # Build test filter argument
-        FILTER_ARG=""
+        # Build test arguments array to properly handle spaces in filter
+        TEST_ARGS=(
+          "${{ inputs.solution-path }}"
+          --configuration "${{ inputs.configuration }}"
+          --no-build
+          --verbosity normal
+          --logger "trx;LogFileName=test-results.trx"
+        )
         if [ -n "${{ inputs.test-filter }}" ]; then
-          FILTER_ARG="--filter \"${{ inputs.test-filter }}\""
+          TEST_ARGS+=(--filter "${{ inputs.test-filter }}")
         fi
 
         set +e
-        dotnet test "${{ inputs.solution-path }}" \
-          --configuration ${{ inputs.configuration }} \
-          --no-build \
-          --verbosity normal \
-          --logger "trx;LogFileName=test-results.trx" \
-          $FILTER_ARG \
-          2>&1 | tee test_output.txt
-        TEST_EXIT=$?
+        dotnet test "${TEST_ARGS[@]}" 2>&1 | tee test_output.txt
+        TEST_EXIT=${PIPESTATUS[0]}
         set -e
 
         if [ $TEST_EXIT -eq 0 ]; then

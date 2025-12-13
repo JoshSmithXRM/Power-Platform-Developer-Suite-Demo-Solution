@@ -269,19 +269,30 @@ function Register-PluginStep {
         }
         $messageId = $message.CrmRecords[0].sdkmessageid
 
-        # Get SDK Message Filter ID
-        $entityTypeCodes = @{
-            "account" = 1
-            "contact" = 2
-            "opportunity" = 3
-            "lead" = 4
-            "incident" = 112
-            "systemuser" = 8
-            "team" = 9
-        }
-
+        # Get SDK Message Filter ID by dynamically looking up the entity's ObjectTypeCode
         $filterId = $null
-        $typeCode = $entityTypeCodes[$EntityName]
+        $typeCode = $null
+
+        # Query EntityDefinitions to get the ObjectTypeCode for the entity
+        try {
+            $entityDefFetch = @"
+<fetch top='1'>
+  <entity name='entity'>
+    <attribute name='objecttypecode' />
+    <filter>
+      <condition attribute='logicalname' operator='eq' value='$EntityName' />
+    </filter>
+  </entity>
+</fetch>
+"@
+            $entityDefResult = Get-CrmRecordsByFetch -conn $Connection -Fetch $entityDefFetch
+            if ($entityDefResult.CrmRecords.Count -gt 0) {
+                $typeCode = $entityDefResult.CrmRecords[0].objecttypecode
+            }
+        }
+        catch {
+            Write-Log "    Could not look up entity type code for '$EntityName'"
+        }
 
         if ($typeCode) {
             $filterFetch = @"
@@ -307,7 +318,7 @@ function Register-PluginStep {
             }
         }
         else {
-            Write-Log "    Unknown entity type code for '$EntityName', registering without filter"
+            Write-Log "    Could not determine entity type code for '$EntityName', registering without filter"
         }
 
         # Create step

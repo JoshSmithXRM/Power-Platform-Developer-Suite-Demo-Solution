@@ -61,12 +61,21 @@ runs:
       shell: bash
       run: |
         echo "Verifying connection..."
-        WHO_OUTPUT=$(pac org who)
+
+        # Use JSON output for reliable parsing
+        WHO_OUTPUT=$(pac org who --json 2>/dev/null || pac org who)
         echo "$WHO_OUTPUT"
 
-        # Parse environment ID from output
-        ENV_ID=$(echo "$WHO_OUTPUT" | grep -i "Environment ID" | sed 's/.*: *//' | tr -d '[:space:]')
-        USER_ID=$(echo "$WHO_OUTPUT" | grep -i "User ID" | sed 's/.*: *//' | tr -d '[:space:]')
+        # Try to parse as JSON first, fall back to text parsing
+        if echo "$WHO_OUTPUT" | jq -e . >/dev/null 2>&1; then
+          # JSON parsing (preferred)
+          ENV_ID=$(echo "$WHO_OUTPUT" | jq -r '.EnvironmentId // empty')
+          USER_ID=$(echo "$WHO_OUTPUT" | jq -r '.UserId // empty')
+        else
+          # Fallback to text parsing for older PAC versions
+          ENV_ID=$(echo "$WHO_OUTPUT" | grep -i "Environment ID" | sed 's/.*: *//' | tr -d '[:space:]')
+          USER_ID=$(echo "$WHO_OUTPUT" | grep -i "User ID" | sed 's/.*: *//' | tr -d '[:space:]')
+        fi
 
         echo "environment-id=$ENV_ID" >> $GITHUB_OUTPUT
         echo "user-id=$USER_ID" >> $GITHUB_OUTPUT

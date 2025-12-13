@@ -357,15 +357,29 @@ function Add-TableAttributes {
 
     Write-Log "Adding attributes to table: $TableName"
 
-    # Wait a moment for table to be fully created
-    Start-Sleep -Seconds 2
+    # Poll for table to be fully created (more reliable than fixed sleep)
+    $maxAttempts = 10
+    $delaySeconds = 2
+    $attempt = 0
+    $entityResult = $null
 
-    # Get the entity metadata to find the MetadataId
-    $entityResult = Invoke-DataverseApi -Connection $Connection -Method "GET" `
-        -Endpoint "/EntityDefinitions?`$filter=LogicalName eq '$TableName'&`$select=MetadataId"
+    do {
+        $attempt++
+        $entityResult = Invoke-DataverseApi -Connection $Connection -Method "GET" `
+            -Endpoint "/EntityDefinitions?`$filter=LogicalName eq '$TableName'&`$select=MetadataId"
+
+        if ($entityResult.value.Count -gt 0) {
+            break
+        }
+
+        if ($attempt -lt $maxAttempts) {
+            Write-Log "  Table not yet available, waiting... (attempt $attempt/$maxAttempts)"
+            Start-Sleep -Seconds $delaySeconds
+        }
+    } while ($attempt -lt $maxAttempts)
 
     if ($entityResult.value.Count -eq 0) {
-        throw "Could not find table '$TableName'"
+        throw "Could not find table '$TableName' after $maxAttempts attempts"
     }
 
     $metadataId = $entityResult.value[0].MetadataId
