@@ -9,7 +9,12 @@
 *.user
 *.userosscache
 *.sln.docstates
+# Environment files (credentials - NEVER commit)
 *.env
+.env.*
+!.env.example
+.env.local
+.env.*.local
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs

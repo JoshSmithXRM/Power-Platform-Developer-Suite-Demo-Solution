@@ -7,9 +7,8 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <!-- TODO: Generate SNK via Visual Studio: Right-click project > Properties > Signing > Sign the assembly -->
-    <!-- <SignAssembly>true</SignAssembly> -->
-    <!-- <AssemblyOriginatorKeyFile>PPDSDemo.Plugins.snk</AssemblyOriginatorKeyFile> -->
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>PPDSDemo.Plugins.snk</AssemblyOriginatorKeyFile>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Company>Power Platform Developer Suite Demo</Company>
     <Product>PPDSDemo Plugins</Product>

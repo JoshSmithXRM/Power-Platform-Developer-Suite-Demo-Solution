@@ -79,9 +79,20 @@ pac solution pack --zipfile solutions/exports/PPDSDemo.zip --folder solutions/PP
 ## Documentation
 
 - [PAC CLI Setup](docs/tools/pac-cli.md) - Installing and configuring Power Platform CLI
+- [Solution Export Pipeline](docs/cicd/solution-export-pipeline.md) - Automated nightly export from Dataverse
 - [Plugin Development](docs/development/plugins.md) - Plugin patterns and best practices
 - [Web Resources](docs/development/web-resources.md) - JavaScript/TypeScript patterns
 - [Solution Management](docs/development/solutions.md) - Working with solutions
+
+## CI/CD
+
+This repository includes GitHub Actions workflows for Power Platform ALM:
+
+| Workflow | Trigger | Description |
+|----------|---------|-------------|
+| **Export Solution** | Nightly / Manual | Exports solution from Dataverse to source control |
+
+See [CI/CD Documentation](docs/cicd/solution-export-pipeline.md) for setup instructions.
 
 ## Extension Integration
 
