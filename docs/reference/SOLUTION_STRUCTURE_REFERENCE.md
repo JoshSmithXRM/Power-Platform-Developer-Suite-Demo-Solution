@@ -44,18 +44,22 @@ solutions/
         ├── WebResources/             # JavaScript, HTML, CSS, images
         │   └── ppds_/
         │       └── scripts/
-        ├── PluginAssemblies/         # Plugin DLLs and metadata
+        ├── PluginAssemblies/         # Plugin DLLs (appears after registration)
         │   └── AssemblyName-GUID/
         │       ├── AssemblyName.dll
         │       └── AssemblyName.dll.data.xml
-        ├── SdkMessageProcessingSteps/  # Plugin step registrations
+        ├── SdkMessageProcessingSteps/  # Plugin steps (appears after registration)
         │   └── {step-guid}.xml
+        ├── pluginpackages/           # Plugin packages (appears after registration)
+        │   └── PackageName-GUID/
         └── environmentvariabledefinitions/  # Environment variables
             └── ppds_variablename/
                 └── environmentvariabledefinition.xml
 ```
 
-**Key point:** No `Managed/` or `Unmanaged/` subfolders. The `--packagetype Both` merge creates a flat structure.
+**Key points:**
+- No `Managed/` or `Unmanaged/` subfolders - the `--packagetype Both` merge creates a flat structure
+- Plugin folders (`PluginAssemblies/`, `SdkMessageProcessingSteps/`, `pluginpackages/`) only appear after plugins are registered in the solution
 
 ---
 

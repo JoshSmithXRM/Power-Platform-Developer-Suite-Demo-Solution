@@ -202,7 +202,7 @@ jobs:
         id: pack-managed
         uses: ./.github/actions/pack-solution
         with:
-          solution-folder: ${{ env.SOLUTION_BASE_FOLDER }}/Managed
+          solution-folder: ${{ env.SOLUTION_BASE_FOLDER }}
           solution-name: ${{ env.SOLUTION_NAME }}
           output-folder: ${{ env.SOLUTION_EXPORT_FOLDER }}
           package-type: Managed
@@ -211,7 +211,7 @@ jobs:
         id: pack-unmanaged
         uses: ./.github/actions/pack-solution
         with:
-          solution-folder: ${{ env.SOLUTION_BASE_FOLDER }}/Unmanaged
+          solution-folder: ${{ env.SOLUTION_BASE_FOLDER }}
           solution-name: ${{ env.SOLUTION_NAME }}
           output-folder: ${{ env.SOLUTION_EXPORT_FOLDER }}
           package-type: Unmanaged

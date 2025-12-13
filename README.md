@@ -37,7 +37,7 @@ This repository serves four main goals:
 - [.NET SDK 6.0+](https://dotnet.microsoft.com/download) (for tooling)
 - [.NET Framework 4.6.2 Developer Pack](https://dotnet.microsoft.com/download/dotnet-framework) (for plugins)
 - [Node.js 18+](https://nodejs.org/) (for web resources and PCF)
-- [Power Platform CLI (PAC)](docs/tools/pac-cli.md) (for solution management)
+- [Power Platform CLI (PAC)](docs/reference/PAC_CLI_REFERENCE.md) (for solution management)
 - [Visual Studio 2022](https://visualstudio.microsoft.com/) or [VS Code](https://code.visualstudio.com/)
 
 ### Quick Start

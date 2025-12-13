@@ -56,13 +56,13 @@ Create authentication profiles for each environment:
 
 ```bash
 # Dev environment (interactive login)
-pac auth create --environment https://your-dev-org.crm.dynamics.com --name dev
+pac auth create --url https://your-dev-org.crm.dynamics.com --name dev
 
 # QA environment
-pac auth create --environment https://your-qa-org.crm.dynamics.com --name qa
+pac auth create --url https://your-qa-org.crm.dynamics.com --name qa
 
 # Prod environment
-pac auth create --environment https://your-prod-org.crm.dynamics.com --name prod
+pac auth create --url https://your-prod-org.crm.dynamics.com --name prod
 ```
 
 Verify your profiles:
@@ -248,7 +248,7 @@ pac solution unpack --zipfile solutions/exports/PPDSDemo.zip --folder solutions/
 ```bash
 # Clear and recreate auth
 pac auth clear
-pac auth create --environment https://your-org.crm.dynamics.com --name dev
+pac auth create --url https://your-org.crm.dynamics.com --name dev
 ```
 
 ### Build Failures

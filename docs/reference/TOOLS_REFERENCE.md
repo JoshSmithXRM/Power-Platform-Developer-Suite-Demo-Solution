@@ -206,6 +206,8 @@ $conn = Get-DataverseConnection `
 | `Deploy-Components.ps1` | Deploy plugins and web resources |
 | `Create-SchemaComponents.ps1` | Create tables, option sets, environment variables |
 | `Add-MissingSolutionComponents.ps1` | Add existing components to solution |
+| `Generate-Snk.ps1` | Generate strong name key file for assembly signing |
+| `Setup-BranchProtection.ps1` | Configure GitHub branch protection rules via gh CLI |
 
 ---
 

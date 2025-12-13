@@ -128,6 +128,6 @@ The components ARE the documentation. They exist, follow patterns, and deploy.
 
 ## See Also
 
-- [docs/strategy/](docs/strategy/) - ALM, Environment, Branching, Pipeline strategies
-- [CLAUDE.md](CLAUDE.md) - AI-assistable coding patterns
-- [docs/README.md](docs/README.md) - Documentation navigation
+- [strategy/](strategy/) - ALM, Environment, Branching, Pipeline strategies
+- [CLAUDE.md](../CLAUDE.md) - AI-assistable coding patterns
+- [README.md](README.md) - Documentation navigation

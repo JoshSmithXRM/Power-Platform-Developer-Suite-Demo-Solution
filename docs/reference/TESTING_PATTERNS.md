@@ -2,6 +2,8 @@
 
 Patterns for unit testing Dynamics 365 plugins and workflow activities.
 
+> **Note:** Test projects are not yet implemented in this demo solution. These patterns show recommended testing approaches that can be added when needed. The plugin code (`src/Plugins/PPDSDemo.Plugins/`) is ready to be tested using these patterns.
+
 ---
 
 ## Plugin Unit Testing with FakeXrmEasy

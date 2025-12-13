@@ -8,9 +8,9 @@
 #     id: pack
 #     uses: ./.github/actions/pack-solution
 #     with:
-#       solution-folder: solutions/MySolution/src/Managed
+#       solution-folder: solutions/MySolution/src
 #       solution-name: MySolution
-#       package-type: Managed
+#       package-type: Managed  # or Unmanaged - same source, different output
 #
 #   # Use output
 #   - run: echo "Packed to ${{ steps.pack.outputs.solution-path }}"

@@ -30,7 +30,7 @@
 #       with:
 #         environment-name: QA
 #         solution-name: PPDSDemo
-#         solution-folder: solutions/PPDSDemo/src/Managed
+#         solution-folder: solutions/PPDSDemo/src
 #         build-plugins: true
 #         ref: develop
 #       secrets: inherit
@@ -51,7 +51,7 @@ on:
         required: true
         type: string
       solution-folder:
-        description: 'Path to Managed solution folder'
+        description: 'Path to solution source folder (flat structure from packagetype Both)'
         required: true
         type: string
       ref:

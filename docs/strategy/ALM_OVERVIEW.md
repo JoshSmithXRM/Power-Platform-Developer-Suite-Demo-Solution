@@ -24,7 +24,8 @@ All solution changes are exported to Git and committed. If an environment is los
 
 **Implications:**
 - Solutions are exported from Dev and unpacked to source control
-- Both Managed and Unmanaged versions are stored
+- A single unified source is stored (using `--packagetype Both`)
+- Same source builds both managed (Release) and unmanaged (Debug)
 - Deployments to QA/Prod are built from source control, not exported from Dev
 
 ### 2. Environments Have Specific Purposes

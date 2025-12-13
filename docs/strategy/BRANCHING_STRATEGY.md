@@ -272,35 +272,72 @@ Benefits:
 
 ## Branch Protection Rules
 
+Configure these rules in GitHub: Settings → Branches → Add branch protection rule
+
 ### `main` Branch
 
+| Setting | Value | Reason |
+|---------|-------|--------|
+| Require PR before merging | Yes | No direct commits to production |
+| Required approvals | 1 | Human review before production |
+| Dismiss stale reviews | Yes | Re-review after new commits |
+| Require status checks | Yes | CI must pass |
+| Status checks (strict) | Yes | Branch must be up-to-date |
+| Required checks | `Validation Status` | PR validation workflow |
+| Include administrators | Yes | No bypass, even for admins |
+| Allow force pushes | No | Protect history |
+| Allow deletions | No | Protect branch |
+
 ```yaml
-# GitHub branch protection settings
-protection:
+# GitHub API equivalent (see tools/Setup-BranchProtection.ps1)
+main:
   required_pull_request_reviews:
     required_approving_review_count: 1
     dismiss_stale_reviews: true
   required_status_checks:
     strict: true
     contexts:
-      - "deploy-to-qa / deploy"  # CD: Deploy to QA workflow
+      - "Validation Status"
   enforce_admins: true
-  restrictions: null  # Anyone with write access can merge after approval
+  allow_force_pushes: false
+  allow_deletions: false
 ```
 
 ### `develop` Branch
 
+| Setting | Value | Reason |
+|---------|-------|--------|
+| Require PR before merging | Yes | Feature branches merge via PR |
+| Required approvals | 0 | Optional for feature PRs |
+| Dismiss stale reviews | No | Not critical for integration branch |
+| Require status checks | Yes | CI must pass |
+| Status checks (strict) | No | Nightly exports would conflict |
+| Required checks | `Validation Status` | PR validation workflow |
+| Include administrators | No | Allow automated pipeline bypass |
+| Allow force pushes | No | Protect history |
+| Allow deletions | No | Protect branch |
+
 ```yaml
-protection:
+develop:
   required_pull_request_reviews:
-    required_approving_review_count: 0  # Optional for feature PRs
+    required_approving_review_count: 0
   required_status_checks:
     strict: false
-    contexts: []
-  enforce_admins: false
+    contexts:
+      - "Validation Status"
+  enforce_admins: false  # Allows GitHub Actions to push
   allow_force_pushes: false
   allow_deletions: false
 ```
+
+### Automated Pipeline Bypass
+
+The nightly export pipeline commits directly to `develop`. This works because:
+- `enforce_admins: false` on develop
+- GitHub Actions uses `GITHUB_TOKEN` with write permissions
+- Status checks not required for direct pushes (only PRs)
+
+For stricter environments, use a GitHub App or PAT with bypass permissions.
 
 ---
 

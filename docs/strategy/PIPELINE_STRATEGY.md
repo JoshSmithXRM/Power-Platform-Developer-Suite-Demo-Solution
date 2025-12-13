@@ -108,7 +108,8 @@ graph LR
 | `ci-export.yml` | Nightly schedule, manual | Export from Dev to develop branch |
 | `cd-qa.yml` | Push to develop, manual | Deploy to QA environment |
 | `cd-prod.yml` | Push to main, manual | Deploy to Production environment |
-| `pr-validate.yml` | PR to develop/main | Validate solution can be packed |
+| `pr-validate.yml` | PR to develop/main | Validate solution, build code, run Solution Checker |
+| `codeql.yml` | Push, PR, weekly schedule | Security scanning for C# code |
 | `_deploy-solution.yml` | Called by cd-* workflows | Reusable deploy pattern |
 
 ---
@@ -124,6 +125,11 @@ Reusable step sequences are extracted into composite actions in `.github/actions
 | `pack-solution` | Pack solution from source | `solution-folder`, `solution-name`, `package-type` |
 | `import-solution` | Import solution to environment | `solution-path`, `force-overwrite` |
 | `export-solution` | Export and unpack solution | `solution-name`, `output-folder` |
+| `build-solution` | Build .NET solution | `solution-path`, `configuration`, `run-tests` |
+| `copy-plugin-assemblies` | Copy classic DLLs to solution | `source-assembly`, `solution-folder` |
+| `copy-plugin-packages` | Copy plugin packages to solution | `source-package`, `solution-folder` |
+| `check-solution` | Run Solution Checker | `solution-path`, `fail-on-level` |
+| `analyze-changes` | Detect meaningful changes | `solution-folder` |
 
 ### Usage Example
 
@@ -302,11 +308,20 @@ For authentication, Azure DevOps uses the Power Platform Build Tools extension o
 
 ---
 
+## Current Features
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Solution Checker | Automated quality gates in PR validation | Done |
+| CodeQL scanning | Security analysis for C# code | Done |
+| Dependency Review | Block PRs with vulnerable dependencies | Done |
+| Plugin build integration | Build and copy assemblies/packages | Done |
+| Version stamping | X.X.YYYYMMDD.BuildNumber format | Done |
+
 ## Future Enhancements
 
 | Enhancement | Description | Priority |
 |-------------|-------------|----------|
-| Solution Checker integration | Automated quality gates | High |
 | Approval gates | Manual approval for production | Medium |
 | Multi-solution templates | Dependency-aware deployments | Medium |
 | Rollback automation | Quick rollback on failure | Low |

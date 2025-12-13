@@ -47,7 +47,7 @@ Before using PAC CLI with Dataverse, you need to authenticate:
 ### Interactive Browser Authentication
 
 ```bash
-# Create an authentication profile
+# Create an authentication profile (--url is required)
 pac auth create --name "MyDevEnvironment" --url https://yourorg.crm.dynamics.com
 
 # This opens a browser for Microsoft login

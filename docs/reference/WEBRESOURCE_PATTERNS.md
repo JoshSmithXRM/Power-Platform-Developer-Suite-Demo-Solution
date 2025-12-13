@@ -2,6 +2,8 @@
 
 Patterns and best practices for JavaScript/TypeScript web resources in Dynamics 365 / Dataverse.
 
+> **Note:** These patterns use TypeScript syntax for clarity and type safety. The actual demo implementation (`src/WebResources/ppds_/scripts/account.form.js`) uses JavaScript ES5 with IIFE pattern for broader browser compatibility. Both approaches achieve the same goals (namespacing, avoiding globals).
+
 ---
 
 ## Form Script Structure

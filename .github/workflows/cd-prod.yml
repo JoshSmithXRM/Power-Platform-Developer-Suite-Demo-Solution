@@ -75,6 +75,6 @@ jobs:
     with:
       environment-name: Prod
       solution-name: ${{ github.event.inputs.solution_name || 'PPDSDemo' }}
-      solution-folder: solutions/PPDSDemo/src/Managed
+      solution-folder: solutions/PPDSDemo/src
       ref: main
     secrets: inherit
