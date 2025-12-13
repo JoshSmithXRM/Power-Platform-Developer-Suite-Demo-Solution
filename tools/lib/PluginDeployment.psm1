@@ -546,7 +546,8 @@ function Get-DataverseApiUrl {
     }
 
     $whoData = $whoOutput | ConvertFrom-Json
-    $envUrl = if ($whoData.EnvironmentUrl) { $whoData.EnvironmentUrl } else { $whoData.OrganizationUrl }
+    # PAC CLI JSON uses OrgUrl property
+    $envUrl = if ($whoData.OrgUrl) { $whoData.OrgUrl } elseif ($whoData.EnvironmentUrl) { $whoData.EnvironmentUrl } else { $whoData.OrganizationUrl }
     if (-not $envUrl) {
         throw "Could not determine environment URL from PAC CLI"
     }
@@ -581,6 +582,13 @@ function Invoke-DataverseApi {
     <#
     .SYNOPSIS
         Makes a Web API call to Dataverse.
+    .PARAMETER ApiUrl
+        The base Web API URL.
+    .PARAMETER Endpoint
+        The API endpoint (relative to ApiUrl).
+    .PARAMETER AuthHeaders
+        Authentication headers including Authorization bearer token.
+        Get these from Get-AuthHeaders in Common-Auth.ps1.
     #>
     param(
         [Parameter(Mandatory = $true)]
@@ -588,6 +596,9 @@ function Invoke-DataverseApi {
 
         [Parameter(Mandatory = $true)]
         [string]$Endpoint,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
 
         [Parameter()]
         [ValidateSet("GET", "POST", "PATCH", "DELETE")]
@@ -597,31 +608,25 @@ function Invoke-DataverseApi {
         [object]$Body,
 
         [Parameter()]
-        [hashtable]$Headers = @{},
-
-        [Parameter()]
         [switch]$WhatIf
     )
 
     $fullUrl = "$ApiUrl/$Endpoint"
 
-    $defaultHeaders = @{
-        "OData-MaxVersion" = "4.0"
-        "OData-Version" = "4.0"
-        "Accept" = "application/json"
-        "Content-Type" = "application/json; charset=utf-8"
-        "Prefer" = "return=representation"
+    # Start with auth headers and add OData headers
+    $headers = @{}
+    foreach ($key in $AuthHeaders.Keys) {
+        $headers[$key] = $AuthHeaders[$key]
     }
-
-    # Merge headers
-    foreach ($key in $Headers.Keys) {
-        $defaultHeaders[$key] = $Headers[$key]
-    }
+    $headers["OData-MaxVersion"] = "4.0"
+    $headers["OData-Version"] = "4.0"
+    $headers["Accept"] = "application/json"
+    $headers["Prefer"] = "return=representation"
 
     if ($WhatIf) {
         Write-PluginLog "[WhatIf] $Method $fullUrl"
         if ($Body) {
-            Write-PluginDebug ($Body | ConvertTo-Json -Depth 5)
+            Write-PluginDebug ($Body | ConvertTo-Json -Depth 5 -Compress)
         }
         return $null
     }
@@ -629,8 +634,8 @@ function Invoke-DataverseApi {
     $params = @{
         Uri = $fullUrl
         Method = $Method
-        Headers = $defaultHeaders
-        ContentType = "application/json"
+        Headers = $headers
+        ContentType = "application/json; charset=utf-8"
     }
 
     if ($Body) {
@@ -638,8 +643,6 @@ function Invoke-DataverseApi {
     }
 
     try {
-        # Use PAC CLI to make the API call via dataverse command
-        # Since Invoke-RestMethod needs auth token, we use pac dataverse
         $response = Invoke-RestMethod @params -UseBasicParsing
         return $response
     }
@@ -665,12 +668,15 @@ function Get-PluginAssembly {
         [string]$ApiUrl,
 
         [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
+
+        [Parameter(Mandatory = $true)]
         [string]$Name
     )
 
     $filter = "`$filter=name eq '$Name'"
     $select = "`$select=pluginassemblyid,name,version,publickeytoken"
-    $result = Invoke-DataverseApi -ApiUrl $ApiUrl -Endpoint "pluginassemblies?$filter&$select" -Method GET
+    $result = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "pluginassemblies?$filter&$select" -Method GET
     return $result.value | Select-Object -First 1
 }
 
@@ -684,6 +690,9 @@ function Get-PluginType {
         [string]$ApiUrl,
 
         [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
+
+        [Parameter(Mandatory = $true)]
         [string]$AssemblyId,
 
         [Parameter(Mandatory = $true)]
@@ -692,7 +701,7 @@ function Get-PluginType {
 
     $filter = "`$filter=_pluginassemblyid_value eq '$AssemblyId' and typename eq '$TypeName'"
     $select = "`$select=plugintypeid,typename,friendlyname"
-    $result = Invoke-DataverseApi -ApiUrl $ApiUrl -Endpoint "plugintypes?$filter&$select" -Method GET
+    $result = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "plugintypes?$filter&$select" -Method GET
     return $result.value | Select-Object -First 1
 }
 
@@ -706,12 +715,15 @@ function Get-SdkMessage {
         [string]$ApiUrl,
 
         [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
+
+        [Parameter(Mandatory = $true)]
         [string]$MessageName
     )
 
     $filter = "`$filter=name eq '$MessageName'"
     $select = "`$select=sdkmessageid,name"
-    $result = Invoke-DataverseApi -ApiUrl $ApiUrl -Endpoint "sdkmessages?$filter&$select" -Method GET
+    $result = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessages?$filter&$select" -Method GET
     return $result.value | Select-Object -First 1
 }
 
@@ -725,6 +737,9 @@ function Get-SdkMessageFilter {
         [string]$ApiUrl,
 
         [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
+
+        [Parameter(Mandatory = $true)]
         [string]$MessageId,
 
         [Parameter(Mandatory = $true)]
@@ -733,7 +748,7 @@ function Get-SdkMessageFilter {
 
     $filter = "`$filter=_sdkmessageid_value eq '$MessageId' and primaryobjecttypecode eq '$EntityLogicalName'"
     $select = "`$select=sdkmessagefilterid"
-    $result = Invoke-DataverseApi -ApiUrl $ApiUrl -Endpoint "sdkmessagefilters?$filter&$select" -Method GET
+    $result = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessagefilters?$filter&$select" -Method GET
     return $result.value | Select-Object -First 1
 }
 
@@ -747,12 +762,15 @@ function Get-ProcessingStep {
         [string]$ApiUrl,
 
         [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
+
+        [Parameter(Mandatory = $true)]
         [string]$StepName
     )
 
     $filter = "`$filter=name eq '$StepName'"
     $select = "`$select=sdkmessageprocessingstepid,name,stage,mode,rank,filteringattributes,configuration"
-    $result = Invoke-DataverseApi -ApiUrl $ApiUrl -Endpoint "sdkmessageprocessingsteps?$filter&$select" -Method GET
+    $result = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessageprocessingsteps?$filter&$select" -Method GET
     return $result.value | Select-Object -First 1
 }
 
@@ -766,18 +784,21 @@ function Get-ProcessingStepsForAssembly {
         [string]$ApiUrl,
 
         [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
+
+        [Parameter(Mandatory = $true)]
         [string]$AssemblyId
     )
 
     # Get plugin types for assembly
     $typesFilter = "`$filter=_pluginassemblyid_value eq '$AssemblyId'"
-    $types = Invoke-DataverseApi -ApiUrl $ApiUrl -Endpoint "plugintypes?$typesFilter" -Method GET
+    $types = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "plugintypes?$typesFilter" -Method GET
 
     $steps = @()
     foreach ($type in $types.value) {
         $stepsFilter = "`$filter=_plugintypeid_value eq '$($type.plugintypeid)'"
         $select = "`$select=sdkmessageprocessingstepid,name,stage,mode"
-        $typeSteps = Invoke-DataverseApi -ApiUrl $ApiUrl -Endpoint "sdkmessageprocessingsteps?$stepsFilter&$select" -Method GET
+        $typeSteps = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessageprocessingsteps?$stepsFilter&$select" -Method GET
         $steps += $typeSteps.value
     }
 
@@ -794,12 +815,15 @@ function Get-StepImages {
         [string]$ApiUrl,
 
         [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
+
+        [Parameter(Mandatory = $true)]
         [string]$StepId
     )
 
     $filter = "`$filter=_sdkmessageprocessingstepid_value eq '$StepId'"
     $select = "`$select=sdkmessageprocessingstepimageid,name,entityalias,imagetype,attributes1"
-    $result = Invoke-DataverseApi -ApiUrl $ApiUrl -Endpoint "sdkmessageprocessingstepimages?$filter&$select" -Method GET
+    $result = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessageprocessingstepimages?$filter&$select" -Method GET
     return $result.value
 }
 
@@ -815,6 +839,9 @@ function New-ProcessingStep {
     param(
         [Parameter(Mandatory = $true)]
         [string]$ApiUrl,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
 
         [Parameter(Mandatory = $true)]
         [hashtable]$StepData,
@@ -841,7 +868,7 @@ function New-ProcessingStep {
         $body.configuration = $StepData.Configuration
     }
 
-    return Invoke-DataverseApi -ApiUrl $ApiUrl -Endpoint "sdkmessageprocessingsteps" -Method POST -Body $body -WhatIf:$WhatIf
+    return Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessageprocessingsteps" -Method POST -Body $body -WhatIf:$WhatIf
 }
 
 function Update-ProcessingStep {
@@ -852,6 +879,9 @@ function Update-ProcessingStep {
     param(
         [Parameter(Mandatory = $true)]
         [string]$ApiUrl,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
 
         [Parameter(Mandatory = $true)]
         [string]$StepId,
@@ -879,7 +909,7 @@ function Update-ProcessingStep {
         $body.configuration = $StepData.Configuration
     }
 
-    return Invoke-DataverseApi -ApiUrl $ApiUrl -Endpoint "sdkmessageprocessingsteps($StepId)" -Method PATCH -Body $body -WhatIf:$WhatIf
+    return Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessageprocessingsteps($StepId)" -Method PATCH -Body $body -WhatIf:$WhatIf
 }
 
 function Remove-ProcessingStep {
@@ -892,13 +922,16 @@ function Remove-ProcessingStep {
         [string]$ApiUrl,
 
         [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
+
+        [Parameter(Mandatory = $true)]
         [string]$StepId,
 
         [Parameter()]
         [switch]$WhatIf
     )
 
-    return Invoke-DataverseApi -ApiUrl $ApiUrl -Endpoint "sdkmessageprocessingsteps($StepId)" -Method DELETE -WhatIf:$WhatIf
+    return Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessageprocessingsteps($StepId)" -Method DELETE -WhatIf:$WhatIf
 }
 
 function New-StepImage {
@@ -909,6 +942,9 @@ function New-StepImage {
     param(
         [Parameter(Mandatory = $true)]
         [string]$ApiUrl,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
 
         [Parameter(Mandatory = $true)]
         [hashtable]$ImageData,
@@ -928,7 +964,7 @@ function New-StepImage {
         $body.attributes1 = $ImageData.Attributes
     }
 
-    return Invoke-DataverseApi -ApiUrl $ApiUrl -Endpoint "sdkmessageprocessingstepimages" -Method POST -Body $body -WhatIf:$WhatIf
+    return Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessageprocessingstepimages" -Method POST -Body $body -WhatIf:$WhatIf
 }
 
 function Update-StepImage {
@@ -939,6 +975,9 @@ function Update-StepImage {
     param(
         [Parameter(Mandatory = $true)]
         [string]$ApiUrl,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
 
         [Parameter(Mandatory = $true)]
         [string]$ImageId,
@@ -959,7 +998,7 @@ function Update-StepImage {
         $body.attributes1 = $ImageData.Attributes
     }
 
-    return Invoke-DataverseApi -ApiUrl $ApiUrl -Endpoint "sdkmessageprocessingstepimages($ImageId)" -Method PATCH -Body $body -WhatIf:$WhatIf
+    return Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessageprocessingstepimages($ImageId)" -Method PATCH -Body $body -WhatIf:$WhatIf
 }
 
 function Remove-StepImage {
@@ -972,13 +1011,16 @@ function Remove-StepImage {
         [string]$ApiUrl,
 
         [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
+
+        [Parameter(Mandatory = $true)]
         [string]$ImageId,
 
         [Parameter()]
         [switch]$WhatIf
     )
 
-    return Invoke-DataverseApi -ApiUrl $ApiUrl -Endpoint "sdkmessageprocessingstepimages($ImageId)" -Method DELETE -WhatIf:$WhatIf
+    return Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "sdkmessageprocessingstepimages($ImageId)" -Method DELETE -WhatIf:$WhatIf
 }
 
 # =============================================================================
@@ -988,11 +1030,20 @@ function Remove-StepImage {
 function Deploy-PluginAssembly {
     <#
     .SYNOPSIS
-        Deploys a plugin assembly using PAC CLI.
+        Deploys a plugin assembly using Web API (for new) or PAC CLI (for updates).
     #>
     param(
         [Parameter(Mandatory = $true)]
+        [string]$ApiUrl,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$AuthHeaders,
+
+        [Parameter(Mandatory = $true)]
         [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AssemblyName,
 
         [Parameter(Mandatory = $true)]
         [ValidateSet("Assembly", "Nuget")]
@@ -1002,23 +1053,83 @@ function Deploy-PluginAssembly {
         [switch]$WhatIf
     )
 
-    $pacType = if ($Type -eq "Nuget") { "Nuget" } else { "Assembly" }
-
-    if ($WhatIf) {
-        Write-PluginLog "[WhatIf] pac plugin push --type $pacType --path $Path"
-        return $true
+    if (-not (Test-Path $Path)) {
+        Write-PluginError "File not found: $Path"
+        return $null
     }
 
-    Write-PluginLog "Deploying $Type`: $Path"
-    $result = pac plugin push --type $pacType --path $Path 2>&1
+    # Check if assembly already exists
+    $existingAssembly = Get-PluginAssembly -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Name $AssemblyName
 
-    if ($LASTEXITCODE -ne 0) {
-        Write-PluginError "Failed to deploy assembly: $result"
-        return $false
+    if ($existingAssembly) {
+        # Update existing assembly using PAC CLI
+        Write-PluginLog "Updating existing assembly: $AssemblyName"
+        $pluginId = $existingAssembly.pluginassemblyid
+
+        if ($WhatIf) {
+            Write-PluginLog "[WhatIf] pac plugin push --pluginId $pluginId --pluginFile $Path"
+            return $existingAssembly
+        }
+
+        $result = pac plugin push --pluginId $pluginId --pluginFile $Path 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-PluginError "Failed to update assembly: $result"
+            return $null
+        }
+        Write-PluginSuccess "Assembly updated successfully"
+        return $existingAssembly
     }
+    else {
+        # Register new assembly using Web API
+        Write-PluginLog "Registering new assembly: $AssemblyName"
 
-    Write-PluginSuccess "Assembly deployed successfully"
-    return $true
+        if ($WhatIf) {
+            Write-PluginLog "[WhatIf] Would register new assembly via Web API"
+            return $null
+        }
+
+        # Read assembly bytes and convert to base64
+        $bytes = [System.IO.File]::ReadAllBytes($Path)
+        $content = [System.Convert]::ToBase64String($bytes)
+
+        # Get assembly metadata via reflection
+        try {
+            $assembly = [System.Reflection.Assembly]::LoadFrom($Path)
+            $assemblyName = $assembly.GetName()
+            $version = $assemblyName.Version.ToString()
+            $culture = if ($assemblyName.CultureInfo.Name) { $assemblyName.CultureInfo.Name } else { "neutral" }
+            $publicKeyToken = [System.BitConverter]::ToString($assemblyName.GetPublicKeyToken()).Replace("-", "").ToLower()
+            if (-not $publicKeyToken) { $publicKeyToken = "null" }
+        }
+        catch {
+            Write-PluginWarning "Could not read assembly metadata: $($_.Exception.Message)"
+            $version = "1.0.0.0"
+            $culture = "neutral"
+            $publicKeyToken = "null"
+        }
+
+        $body = @{
+            name = $AssemblyName
+            content = $content
+            isolationmode = 2  # Sandbox
+            sourcetype = 0     # Database
+            version = $version
+            culture = $culture
+            publickeytoken = $publicKeyToken
+        }
+
+        try {
+            $response = Invoke-DataverseApi -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Endpoint "pluginassemblies" -Method POST -Body $body
+            Write-PluginSuccess "Assembly registered successfully"
+
+            # Return the newly created assembly
+            return Get-PluginAssembly -ApiUrl $ApiUrl -AuthHeaders $AuthHeaders -Name $AssemblyName
+        }
+        catch {
+            Write-PluginError "Failed to register assembly: $($_.Exception.Message)"
+            return $null
+        }
+    }
 }
 
 # =============================================================================

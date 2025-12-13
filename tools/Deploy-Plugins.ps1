@@ -3,14 +3,18 @@
     Deploys plugin assemblies and registers steps to Dataverse.
 
 .DESCRIPTION
-    Deploys plugin assemblies using PAC CLI and registers/updates SDK message
+    Deploys plugin assemblies using Web API and registers/updates SDK message
     processing steps and images using the Dataverse Web API.
 
     Supports both classic plugin assemblies and plugin packages (NuGet).
 
+    Authentication hierarchy:
+    1. Explicit parameters (-ClientId, -ClientSecret, -TenantId, -EnvironmentUrl)
+    2. Environment variables (from .env.dev or .env file)
+    3. Interactive OAuth browser login (-Interactive)
+
 .PARAMETER Environment
-    Target environment: Dev (default), QA, Prod.
-    Uses corresponding PAC auth profile or environment variables.
+    Target environment label: Dev (default), QA, Prod.
 
 .PARAMETER Project
     Specific project to deploy. If not specified, deploys all.
@@ -27,13 +31,39 @@
 .PARAMETER Build
     Build projects before deployment.
 
+.PARAMETER EnvironmentUrl
+    Dataverse environment URL (e.g., https://myorg.crm.dynamics.com).
+
+.PARAMETER ClientId
+    Service principal application (client) ID.
+
+.PARAMETER ClientSecret
+    Service principal client secret.
+
+.PARAMETER TenantId
+    Azure AD tenant ID.
+
+.PARAMETER EnvFile
+    Path to .env file with credentials.
+
+.PARAMETER Interactive
+    Use interactive browser-based OAuth login.
+
 .EXAMPLE
     .\Deploy-Plugins.ps1
-    Deploys all plugins to Dev environment.
+    Deploys all plugins using .env.dev credentials.
+
+.EXAMPLE
+    .\Deploy-Plugins.ps1 -Interactive
+    Deploys using browser-based login.
+
+.EXAMPLE
+    .\Deploy-Plugins.ps1 -EnvironmentUrl "https://myorg.crm.dynamics.com" -ClientId "..." -ClientSecret "..." -TenantId "..."
+    Deploys using explicit service principal credentials.
 
 .EXAMPLE
     .\Deploy-Plugins.ps1 -Environment QA -Project PPDSDemo.Plugins
-    Deploys specific plugin assembly to QA.
+    Deploys specific plugin assembly.
 
 .EXAMPLE
     .\Deploy-Plugins.ps1 -Force
@@ -44,8 +74,8 @@
     Shows what would be deployed without making changes.
 
 .NOTES
-    Requires PAC CLI to be installed and authenticated to the target environment.
-    Use 'pac auth create' to authenticate before running this script.
+    Requires Microsoft.Xrm.Data.PowerShell module.
+    Install with: Install-Module Microsoft.Xrm.Data.PowerShell -Scope CurrentUser
 #>
 
 [CmdletBinding(SupportsShouldProcess = $true)]
@@ -64,7 +94,26 @@ param(
     [switch]$SkipAssembly,
 
     [Parameter()]
-    [switch]$Build
+    [switch]$Build,
+
+    # Authentication options
+    [Parameter()]
+    [string]$EnvironmentUrl,
+
+    [Parameter()]
+    [string]$ClientId,
+
+    [Parameter()]
+    [string]$ClientSecret,
+
+    [Parameter()]
+    [string]$TenantId,
+
+    [Parameter()]
+    [string]$EnvFile,
+
+    [Parameter()]
+    [switch]$Interactive
 )
 
 # =============================================================================
@@ -83,6 +132,14 @@ if (-not (Test-Path $modulePath)) {
 }
 Import-Module $modulePath -Force
 
+# Import authentication module
+$authPath = Join-Path $scriptRoot "Common-Auth.ps1"
+if (-not (Test-Path $authPath)) {
+    Write-Error "Authentication module not found: $authPath"
+    exit 1
+}
+. $authPath
+
 # Get WhatIf from common parameters
 $isWhatIf = $WhatIfPreference -or $PSCmdlet.MyInvocation.BoundParameters["WhatIf"]
 
@@ -98,35 +155,47 @@ Write-PluginLog ""
 # Environment Setup
 # =============================================================================
 
-# Verify PAC CLI is authenticated
-Write-PluginLog "Verifying PAC CLI authentication..."
-$whoOutput = pac org who 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-PluginError "Not authenticated to any environment."
-    Write-PluginLog "Run 'pac auth create' to authenticate, or use environment-specific profiles."
+# Get Dataverse connection using Common-Auth
+Write-PluginLog "Authenticating to Dataverse..."
+
+$connectionParams = @{}
+if ($EnvironmentUrl) { $connectionParams["EnvironmentUrl"] = $EnvironmentUrl }
+if ($ClientId) { $connectionParams["ClientId"] = $ClientId }
+if ($ClientSecret) { $connectionParams["ClientSecret"] = $ClientSecret }
+if ($TenantId) { $connectionParams["TenantId"] = $TenantId }
+if ($EnvFile) { $connectionParams["EnvFile"] = $EnvFile }
+if ($Interactive) { $connectionParams["Interactive"] = $true }
+
+try {
+    $connection = Get-DataverseConnection @connectionParams
+    if (-not $connection -or -not $connection.IsReady) {
+        Write-PluginError "Failed to connect to Dataverse"
+        exit 1
+    }
+}
+catch {
+    Write-PluginError "Authentication failed: $($_.Exception.Message)"
+    Write-PluginLog ""
+    Write-PluginLog "Authentication options:"
+    Write-PluginLog "  1. Create .env.dev file with SP_APPLICATION_ID, SP_CLIENT_SECRET, DATAVERSE_URL"
+    Write-PluginLog "  2. Use -ClientId, -ClientSecret, -TenantId, -EnvironmentUrl parameters"
+    Write-PluginLog "  3. Use -Interactive flag for browser-based login"
     exit 1
 }
 
-# Parse environment info
-$envInfo = @{}
-foreach ($line in $whoOutput) {
-    if ($line -match "^(.+?):\s*(.+)$") {
-        $envInfo[$matches[1].Trim()] = $matches[2].Trim()
-    }
-}
-
-$connectedEnv = if ($envInfo["Environment"]) { $envInfo["Environment"] } elseif ($envInfo["Friendly Name"]) { $envInfo["Friendly Name"] } else { "Unknown" }
-$connectedUrl = if ($envInfo["Environment URL"]) { $envInfo["Environment URL"] } elseif ($envInfo["Organization URL"]) { $envInfo["Organization URL"] } else { "Unknown" }
+# Get API URL and Auth Headers from connection
+$connectedEnv = $connection.ConnectedOrgFriendlyName
+$connectedUrl = $connection.ConnectedOrgPublishedEndpoints["WebApplication"]
 Write-PluginSuccess "Connected to: $connectedEnv"
 Write-PluginLog "URL: $connectedUrl"
 
-# Get API URL
 try {
-    $apiUrl = Get-DataverseApiUrl
+    $apiUrl = Get-WebApiBaseUrl -Connection $connection
+    $authHeaders = Get-AuthHeaders -Connection $connection
     Write-PluginDebug "API URL: $apiUrl"
 }
 catch {
-    Write-PluginError "Failed to get API URL: $($_.Exception.Message)"
+    Write-PluginError "Failed to get API URL or auth headers: $($_.Exception.Message)"
     exit 1
 }
 
@@ -234,7 +303,7 @@ try {
                 continue
             }
 
-            $deploySuccess = Deploy-PluginAssembly -Path $deployPath -Type $asmReg.type -WhatIf:$isWhatIf
+            $deploySuccess = Deploy-PluginAssembly -ApiUrl $apiUrl -AuthHeaders $authHeaders -Path $deployPath -AssemblyName $asmReg.name -Type $asmReg.type -WhatIf:$isWhatIf
             if (-not $deploySuccess -and -not $isWhatIf) {
                 Write-PluginError "Failed to deploy assembly, skipping step registration"
                 continue
@@ -246,7 +315,7 @@ try {
         $assembly = $null
         if (-not $isWhatIf) {
             try {
-                $assembly = Get-PluginAssembly -ApiUrl $apiUrl -Name $asmReg.name
+                $assembly = Get-PluginAssembly -ApiUrl $apiUrl -AuthHeaders $authHeaders -Name $asmReg.name
                 if (-not $assembly) {
                     Write-PluginError "Assembly not found in Dataverse after deployment: $($asmReg.name)"
                     Write-PluginLog "This may indicate the pac plugin push failed silently."
@@ -273,7 +342,7 @@ try {
             $pluginType = $null
             if (-not $isWhatIf -and $assembly) {
                 try {
-                    $pluginType = Get-PluginType -ApiUrl $apiUrl -AssemblyId $assembly.pluginassemblyid -TypeName $plugin.typeName
+                    $pluginType = Get-PluginType -ApiUrl $apiUrl -AuthHeaders $authHeaders -AssemblyId $assembly.pluginassemblyid -TypeName $plugin.typeName
                     if (-not $pluginType) {
                         Write-PluginWarning "  Plugin type not found: $($plugin.typeName)"
                         Write-PluginLog "  This may happen if the assembly was just deployed. Try running again."
@@ -298,13 +367,13 @@ try {
 
                 if (-not $isWhatIf) {
                     try {
-                        $message = Get-SdkMessage -ApiUrl $apiUrl -MessageName $step.message
+                        $message = Get-SdkMessage -ApiUrl $apiUrl -AuthHeaders $authHeaders -MessageName $step.message
                         if (-not $message) {
                             Write-PluginError "    SDK Message not found: $($step.message)"
                             continue
                         }
 
-                        $filter = Get-SdkMessageFilter -ApiUrl $apiUrl -MessageId $message.sdkmessageid -EntityLogicalName $step.entity
+                        $filter = Get-SdkMessageFilter -ApiUrl $apiUrl -AuthHeaders $authHeaders -MessageId $message.sdkmessageid -EntityLogicalName $step.entity
                         if (-not $filter) {
                             Write-PluginError "    SDK Message Filter not found for: $($step.message) / $($step.entity)"
                             continue
@@ -324,7 +393,7 @@ try {
                 $existingStep = $null
                 if (-not $isWhatIf) {
                     try {
-                        $existingStep = Get-ProcessingStep -ApiUrl $apiUrl -StepName $step.name
+                        $existingStep = Get-ProcessingStep -ApiUrl $apiUrl -AuthHeaders $authHeaders -StepName $step.name
                     }
                     catch {
                         # Step doesn't exist, will create
@@ -348,7 +417,7 @@ try {
                     Write-PluginLog "    Updating existing step..."
                     if (-not $isWhatIf) {
                         try {
-                            Update-ProcessingStep -ApiUrl $apiUrl -StepId $existingStep.sdkmessageprocessingstepid -StepData $stepData
+                            Update-ProcessingStep -ApiUrl $apiUrl -AuthHeaders $authHeaders -StepId $existingStep.sdkmessageprocessingstepid -StepData $stepData
                             $stepId = $existingStep.sdkmessageprocessingstepid
                             $totalStepsUpdated++
                             Write-PluginSuccess "    Step updated"
@@ -365,7 +434,7 @@ try {
                     Write-PluginLog "    Creating new step..."
                     if (-not $isWhatIf) {
                         try {
-                            $newStep = New-ProcessingStep -ApiUrl $apiUrl -StepData $stepData
+                            $newStep = New-ProcessingStep -ApiUrl $apiUrl -AuthHeaders $authHeaders -StepData $stepData
                             $stepId = $newStep.sdkmessageprocessingstepid
                             $totalStepsCreated++
                             Write-PluginSuccess "    Step created: $stepId"
@@ -390,7 +459,7 @@ try {
                     $existingImages = @()
                     if (-not $isWhatIf -and $stepId) {
                         try {
-                            $existingImages = Get-StepImages -ApiUrl $apiUrl -StepId $stepId
+                            $existingImages = Get-StepImages -ApiUrl $apiUrl -AuthHeaders $authHeaders -StepId $stepId
                         }
                         catch {
                             # No images exist
@@ -411,7 +480,7 @@ try {
                         Write-PluginLog "      Updating existing image..."
                         if (-not $isWhatIf) {
                             try {
-                                Update-StepImage -ApiUrl $apiUrl -ImageId $existingImage.sdkmessageprocessingstepimageid -ImageData $imageData
+                                Update-StepImage -ApiUrl $apiUrl -AuthHeaders $authHeaders -ImageId $existingImage.sdkmessageprocessingstepimageid -ImageData $imageData
                                 $totalImagesUpdated++
                                 Write-PluginSuccess "      Image updated"
                             }
@@ -426,7 +495,7 @@ try {
                         Write-PluginLog "      Creating new image..."
                         if (-not $isWhatIf) {
                             try {
-                                $newImage = New-StepImage -ApiUrl $apiUrl -ImageData $imageData
+                                $newImage = New-StepImage -ApiUrl $apiUrl -AuthHeaders $authHeaders -ImageData $imageData
                                 $totalImagesCreated++
                                 Write-PluginSuccess "      Image created"
                             }
@@ -448,14 +517,14 @@ try {
             Write-PluginLog "Checking for orphaned steps..."
 
             try {
-                $existingSteps = Get-ProcessingStepsForAssembly -ApiUrl $apiUrl -AssemblyId $assembly.pluginassemblyid
+                $existingSteps = Get-ProcessingStepsForAssembly -ApiUrl $apiUrl -AuthHeaders $authHeaders -AssemblyId $assembly.pluginassemblyid
 
                 foreach ($existingStep in $existingSteps) {
                     if ($configuredStepNames -notcontains $existingStep.name) {
                         if ($Force) {
                             Write-PluginWarning "Deleting orphaned step: $($existingStep.name)"
                             try {
-                                Remove-ProcessingStep -ApiUrl $apiUrl -StepId $existingStep.sdkmessageprocessingstepid
+                                Remove-ProcessingStep -ApiUrl $apiUrl -AuthHeaders $authHeaders -StepId $existingStep.sdkmessageprocessingstepid
                                 $totalOrphansDeleted++
                                 Write-PluginSuccess "  Deleted"
                             }
