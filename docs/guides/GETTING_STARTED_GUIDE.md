@@ -103,15 +103,12 @@ If the solution already exists in source control:
 # Select Dev environment
 pac auth select --name dev
 
-# Pack the managed solution
-pac solution pack \
-  --zipfile solutions/exports/PPDSDemo_managed.zip \
-  --folder solutions/PPDSDemo/src/Managed \
-  --packagetype Managed
+# Build unmanaged solution (for Dev import)
+dotnet build solutions/PPDSDemo/PPDSDemo.cdsproj -c Debug
 
 # Import to Dev
 pac solution import \
-  --path solutions/exports/PPDSDemo_managed.zip \
+  --path solutions/PPDSDemo/bin/Debug/PPDSDemo.zip \
   --publish-changes
 ```
 
@@ -122,18 +119,20 @@ If starting from scratch, create the solution in the Power Platform maker portal
 ```bash
 pac auth select --name dev
 
-# Export unmanaged (for source control)
-pac solution export \
-  --name PPDSDemo \
-  --path solutions/exports/PPDSDemo_unmanaged.zip \
-  --managed false
+# Export BOTH unmanaged and managed
+pac solution export --name PPDSDemo --path solutions/exports --managed false --overwrite
+pac solution export --name PPDSDemo --path solutions/exports --managed true --overwrite
 
-# Unpack to source folder
+# Unpack with packagetype Both (creates unified source)
 pac solution unpack \
-  --zipfile solutions/exports/PPDSDemo_unmanaged.zip \
-  --folder solutions/PPDSDemo/src/Unmanaged \
-  --allowDelete
+  --zipfile solutions/exports/PPDSDemo.zip \
+  --folder solutions/PPDSDemo/src \
+  --packagetype Both \
+  --allowDelete \
+  --allowWrite
 ```
+
+> **Note:** Using `--packagetype Both` enables building both managed (Release) and unmanaged (Debug) from the same source.
 
 ---
 
@@ -206,10 +205,11 @@ git checkout -b feature/my-feature
 
 # 2. Make changes in Dev environment (Power Platform maker portal)
 
-# 3. Export changes
+# 3. Export changes (both managed and unmanaged)
 pac auth select --name dev
-pac solution export --name PPDSDemo --path solutions/exports/PPDSDemo.zip --managed false
-pac solution unpack --zipfile solutions/exports/PPDSDemo.zip --folder solutions/PPDSDemo/src/Unmanaged --allowDelete
+pac solution export --name PPDSDemo --path solutions/exports --managed false --overwrite
+pac solution export --name PPDSDemo --path solutions/exports --managed true --overwrite
+pac solution unpack --zipfile solutions/exports/PPDSDemo.zip --folder solutions/PPDSDemo/src --packagetype Both --allowDelete --allowWrite
 
 # 4. Build and test plugins
 dotnet build PPDSDemo.sln --configuration Release
@@ -233,9 +233,10 @@ dotnet build PPDSDemo.sln --configuration Release
 
 # 3. Register/update in Dev using Plugin Registration Tool or pac plugin push
 
-# 4. Export solution to capture registration
-pac solution export --name PPDSDemo --path solutions/exports/PPDSDemo.zip --managed false
-pac solution unpack --zipfile solutions/exports/PPDSDemo.zip --folder solutions/PPDSDemo/src/Unmanaged --allowDelete
+# 4. Export solution to capture registration (both managed and unmanaged)
+pac solution export --name PPDSDemo --path solutions/exports --managed false --overwrite
+pac solution export --name PPDSDemo --path solutions/exports --managed true --overwrite
+pac solution unpack --zipfile solutions/exports/PPDSDemo.zip --folder solutions/PPDSDemo/src --packagetype Both --allowDelete --allowWrite
 ```
 
 ---

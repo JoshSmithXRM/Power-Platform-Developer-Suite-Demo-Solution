@@ -1,5 +1,4 @@
 {
-  "$schema": "https://raw.githubusercontent.com/microsoft/powerplatform-build-tools/main/src/schema/deployment-settings.json",
   "_comment": "QA Environment Deployment Settings for PPDSDemo Solution",
   "_instructions": [
     "This file configures environment-specific values for the QA deployment.",

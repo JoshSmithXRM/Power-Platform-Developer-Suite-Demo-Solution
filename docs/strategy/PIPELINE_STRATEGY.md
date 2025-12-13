@@ -143,18 +143,13 @@ steps:
       client-id: ${{ vars.POWERPLATFORM_CLIENT_ID }}
       client-secret: ${{ secrets.POWERPLATFORM_CLIENT_SECRET }}
 
-  - name: Pack solution
-    id: pack
-    uses: ./.github/actions/pack-solution
-    with:
-      solution-folder: solutions/PPDSDemo/src/Managed
-      solution-name: PPDSDemo
-      package-type: Managed
+  - name: Build managed solution
+    run: dotnet build solutions/PPDSDemo/PPDSDemo.cdsproj -c Release
 
   - name: Import solution
     uses: ./.github/actions/import-solution
     with:
-      solution-path: ${{ steps.pack.outputs.solution-path }}
+      solution-path: solutions/PPDSDemo/bin/Release/PPDSDemo.zip
 ```
 
 ---
@@ -170,7 +165,7 @@ jobs:
     with:
       environment-name: QA
       solution-name: PPDSDemo
-      solution-folder: solutions/PPDSDemo/src/Managed
+      solution-folder: solutions/PPDSDemo/src
       ref: develop
     secrets: inherit
 ```
@@ -180,8 +175,10 @@ jobs:
 |-------|----------|-------------|
 | `environment-name` | Yes | GitHub environment (Dev, QA, Prod) |
 | `solution-name` | Yes | Solution unique name |
-| `solution-folder` | Yes | Path to Managed solution folder |
+| `solution-folder` | Yes | Path to solution source folder |
 | `ref` | No | Git ref to checkout |
+
+> **Note:** The solution source uses `--packagetype Both` format, enabling Release builds to produce managed solutions.
 
 ---
 
@@ -234,7 +231,7 @@ jobs:
     with:
       environment-name: UAT  # Create this GitHub environment
       solution-name: ${{ github.event.inputs.solution_name || 'PPDSDemo' }}
-      solution-folder: solutions/PPDSDemo/src/Managed
+      solution-folder: solutions/PPDSDemo/src
     secrets: inherit
 ```
 
