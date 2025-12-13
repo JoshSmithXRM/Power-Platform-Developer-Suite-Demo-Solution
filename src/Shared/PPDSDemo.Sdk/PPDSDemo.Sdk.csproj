@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net462</TargetFramework>
+    <RootNamespace>PPDSDemo.Sdk</RootNamespace>
+    <AssemblyName>PPDSDemo.Sdk</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+
+    <!-- Strong naming for Dataverse compatibility -->
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>PPDSDemo.Sdk.snk</AssemblyOriginatorKeyFile>
+
+    <!-- Package metadata -->
+    <Description>SDK attributes for plugin step registration configuration</Description>
+    <Authors>Power Platform Developer Suite</Authors>
+  </PropertyGroup>
+
+</Project>

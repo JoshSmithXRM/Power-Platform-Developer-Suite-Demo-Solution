@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Shared\PPDSDemo.Entities\PPDSDemo.Entities.csproj" />
+    <ProjectReference Include="..\..\Shared\PPDSDemo.Sdk\PPDSDemo.Sdk.csproj" />
   </ItemGroup>
 
 </Project>

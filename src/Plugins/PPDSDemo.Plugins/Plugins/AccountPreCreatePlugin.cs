@@ -1,17 +1,17 @@
 using System;
 using Microsoft.Xrm.Sdk;
+using PPDSDemo.Sdk;
 
 namespace PPDSDemo.Plugins.Plugins
 {
     /// <summary>
     /// Validates account data before creation.
-    ///
-    /// Registration:
-    /// - Entity: account
-    /// - Message: Create
-    /// - Stage: Pre-operation (20)
-    /// - Mode: Synchronous
     /// </summary>
+    [PluginStep(
+        Message = "Create",
+        EntityLogicalName = "account",
+        Stage = PluginStage.PreOperation,
+        Mode = PluginMode.Synchronous)]
     public class AccountPreCreatePlugin : PluginBase
     {
         protected override void ExecutePlugin(LocalPluginContext context)
