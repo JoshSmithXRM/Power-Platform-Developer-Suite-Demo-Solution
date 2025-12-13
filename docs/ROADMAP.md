@@ -24,13 +24,15 @@ This demo solution showcases Power Platform ALM patterns with **one example of e
 | Repository structure | Done | Folders, naming conventions |
 | CLAUDE.md patterns | Done | AI-assistable coding guide |
 | Strategy docs | Done | ALM, Environment, Branching, Pipeline |
-| CI/CD: Dev to QA | Done | export-solution.yml |
+| CI/CD: Dev to QA | Done | ci-export.yml, cd-qa.yml |
 | Branching (develop/main) | Done | Feature branch workflow |
-| CI/CD: QA to Prod | Done | deploy-to-prod.yml |
+| CI/CD: QA to Prod | Done | cd-prod.yml |
 | Plugin build integration | Done | Build, copy assemblies & packages to solution |
 | Plugin components reference | Done | docs/reference/PLUGIN_COMPONENTS_REFERENCE.md |
 | Environment setup guide | Done | docs/guides/ENVIRONMENT_SETUP_GUIDE.md |
-| Getting started guide | Pending | Clone, configure, deploy |
+| Getting started guide | Done | docs/guides/GETTING_STARTED_GUIDE.md |
+| Solution structure reference | Done | docs/reference/SOLUTION_STRUCTURE_REFERENCE.md |
+| Deployment settings | Done | Per-environment config (qa/prod.deploymentsettings.json) |
 
 ---
 
@@ -44,9 +46,9 @@ This demo solution showcases Power Platform ALM patterns with **one example of e
 | Plugin package (modern) | Done | With Newtonsoft.Json dependency |
 | Workflow activity | Done | SendNotificationActivity |
 | Web resource (JS) | Done | account.form.js |
-| Custom table | Pending | ppds_DemoRecord (simple entity) |
-| Global option set | Pending | ppds_Status |
-| Environment variables | Pending | 1-2 examples |
+| Custom table | Done | ppds_DemoRecord |
+| Global option set | Done | ppds_status |
+| Environment variables | Done | ppds_ApiEndpoint, ppds_EnableFeatureX |
 
 ---
 
