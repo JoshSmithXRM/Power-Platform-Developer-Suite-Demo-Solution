@@ -36,7 +36,6 @@ on:
     paths:
       - 'src/Plugins/**'
       - 'src/PluginPackages/**'
-      - 'src/Shared/PPDSDemo.Sdk/**'
 
   # Manual trigger for testing
   workflow_dispatch:
@@ -80,9 +79,6 @@ jobs:
           dotnet-version: '8.x'
 
       # Build plugins
-      - name: Build PPDSDemo.Sdk
-        run: dotnet build src/Shared/PPDSDemo.Sdk/PPDSDemo.Sdk.csproj -c Release --nologo
-
       - name: Build PPDSDemo.Plugins
         run: dotnet build src/Plugins/PPDSDemo.Plugins/PPDSDemo.Plugins.csproj -c Release --nologo
 
