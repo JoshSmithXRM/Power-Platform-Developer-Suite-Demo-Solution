@@ -29,6 +29,9 @@ This is part of the **PPDS ecosystem**:
 5. **Static state in plugins** - Sandbox recycles; no static variables
 6. **External assemblies** - Only sandbox-allowed assemblies in plugins
 7. **Separate Managed/Unmanaged folders** - Use `--packagetype Both` unified source
+8. **PR directly to main** - Always target `develop` first
+9. **AI attribution in commits** - No co-author tags, no "Generated with Claude"
+10. **Squash merge develop to main** - Use regular merge to preserve feature commits
 
 ---
 
@@ -41,6 +44,9 @@ This is part of the **PPDS ecosystem**:
 5. **Namespace pattern in JS** - Avoid global pollution (`PPDSDemo.Account`)
 6. **Export both managed AND unmanaged** - Then unpack with `--packagetype Both`
 7. **Deployment settings per environment** - `config/qa.deploymentsettings.json`
+8. **Target `develop` for feature PRs** - Never PR directly to main
+9. **Squash merge to `develop`** - Clean feature commits
+10. **Regular merge `develop` to `main`** - Preserve feature history for releases
 
 ---
 
@@ -179,19 +185,23 @@ For complex/uncertain problems:
 
 ---
 
-## Git Conventions
+## Git Workflow
 
-**Branch strategy:** Feature branches, squash merge to main
+**Branch Model:** GitFlow-lite with `main` and `develop`
 
-**Commit messages:**
-```
-feat: add account validation plugin
-fix: correct status transition logic
-docs: update plugin patterns
-refactor: extract discount calculation service
-```
+| Flow | Merge Strategy | Why |
+|------|----------------|-----|
+| `feature/*` → `develop` | Squash | Clean history, one commit per feature |
+| `develop` → `main` | Regular merge | Preserve features, clear release boundaries |
 
-**No AI attribution** in commits or PR descriptions.
+**PR Targets:**
+- Feature/fix branches → `develop`
+- Release PRs → `main` (from develop only)
+- Hotfixes → `main` (then cherry-pick to develop)
+
+**Commit messages:** Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`)
+
+See [BRANCHING_STRATEGY.md](docs/strategy/BRANCHING_STRATEGY.md) for complete details.
 
 ---
 
