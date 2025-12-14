@@ -101,7 +101,7 @@ Topics to document when the need arises:
 This repo is intentionally minimal. We do NOT include:
 
 - Multiple examples of same component type
-- Unit testing frameworks (FakeXrmEasy, etc.)
+- Unit test projects (patterns documented in [TESTING_PATTERNS.md](reference/TESTING_PATTERNS.md) for reference)
 - TypeScript build pipelines
 - Component development tutorials (use Microsoft docs)
 - Complex multi-solution architectures

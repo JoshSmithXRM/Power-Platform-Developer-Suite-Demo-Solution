@@ -96,11 +96,11 @@ See [SOLUTION_STRUCTURE_REFERENCE.md](docs/reference/SOLUTION_STRUCTURE_REFERENC
 
 | Area | Technology |
 |------|------------|
-| Plugins | .NET Framework 4.6.2, Microsoft.CrmSdk.CoreAssemblies, **PPDS.Plugins** |
+| Plugins | .NET Framework 4.6.2, Microsoft.CrmSdk.CoreAssemblies, **PPDS.Plugins** (NuGet) |
 | Workflows | Microsoft.CrmSdk.Workflow |
 | Web Resources | TypeScript/JavaScript, Xrm SDK |
 | PCF Controls | TypeScript, React (optional), Fluent UI |
-| Deployment | **PPDS.Tools** (PowerShell module) |
+| Deployment | **PPDS.Tools** (PowerShell module: `Install-Module PPDS.Tools`) |
 | Testing | FakeXrmEasy, MSTest |
 
 ---
@@ -122,9 +122,6 @@ See [SOLUTION_STRUCTURE_REFERENCE.md](docs/reference/SOLUTION_STRUCTURE_REFERENC
 ```bash
 # Build plugins
 dotnet build src/Plugins/PPDSDemo.Plugins/PPDSDemo.Plugins.csproj
-
-# Run tests
-dotnet test tests/PPDSDemo.Plugins.Tests/
 
 # Build solution (unmanaged for dev)
 dotnet build solutions/PPDSDemo/PPDSDemo.cdsproj -c Debug
@@ -184,8 +181,6 @@ public class AccountAuditPlugin : PluginBase
 4. Deploy: `.\tools\Deploy-Plugins.ps1`
 
 The `registrations.json` files are committed to source control for review and documentation.
-
-See [docs/design/PLUGIN_DEPLOYMENT_DESIGN.md](docs/design/PLUGIN_DEPLOYMENT_DESIGN.md) for details.
 
 ---
 
