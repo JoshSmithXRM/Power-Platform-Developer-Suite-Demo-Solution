@@ -7,6 +7,17 @@
 #   - name: Setup PAC CLI
 #     uses: ./.github/actions/setup-pac-cli
 #
+#   # Pin to specific version (recommended for production stability)
+#   - name: Setup PAC CLI
+#     uses: ./.github/actions/setup-pac-cli
+#     with:
+#       pac-version: '1.35.5'
+#
+# Version Pinning:
+#   - Default: empty (installs latest version)
+#   - Set pac-version to pin a specific version for reproducible builds
+#   - Find versions at: https://www.nuget.org/packages/Microsoft.PowerApps.CLI.Tool
+#
 # =============================================================================
 
 name: 'Setup PAC CLI'
@@ -17,6 +28,10 @@ inputs:
     description: '.NET SDK version to install'
     required: false
     default: '8.x'
+  pac-version:
+    description: 'PAC CLI version to install (empty = latest)'
+    required: false
+    default: ''
 
 outputs:
   pac-version:
@@ -34,8 +49,17 @@ runs:
     - name: Install Power Platform CLI
       id: install
       shell: bash
+      env:
+        PAC_VERSION: ${{ inputs.pac-version }}
       run: |
-        dotnet tool install --global Microsoft.PowerApps.CLI.Tool
+        if [ -n "$PAC_VERSION" ]; then
+          echo "Installing PAC CLI version: $PAC_VERSION"
+          dotnet tool install --global Microsoft.PowerApps.CLI.Tool --version "$PAC_VERSION"
+        else
+          echo "Installing latest PAC CLI version"
+          dotnet tool install --global Microsoft.PowerApps.CLI.Tool
+        fi
+
         echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
         # Get installed version
