@@ -7,7 +7,6 @@
 # Features:
 #   - Intelligent noise filtering (filters volatile content changes)
 #   - Automatic version stamping (X.X.YYYYMMDD.BuildNumber format)
-#   - Git tagging for release tracking
 #   - Enhanced change analysis and reporting
 #
 # Triggers:
@@ -21,9 +20,9 @@
 #   4. Analyze changes (filter noise from real changes)
 #   5. Update solution version if real changes detected
 #   6. Commit changes to develop branch (or create PR)
-#   7. Create git tag for version tracking
 #
 # The commit to develop will trigger cd-qa.yml for automatic QA deployment.
+# Tags are created on main branch merges (releases), not on exports.
 #
 # =============================================================================
 # GITHUB ENVIRONMENT REQUIRED
@@ -36,6 +35,20 @@
 #     - POWERPLATFORM_CLIENT_ID: your-service-principal-app-id
 #   Secrets:
 #     - POWERPLATFORM_CLIENT_SECRET: your-service-principal-secret
+#
+# Repository Secret (for branch protection bypass):
+#   - AUTOMATION_TOKEN: Fine-grained PAT with 'contents: write' permission
+#
+#     Why needed: Branch protection on 'develop' requires PRs for human changes,
+#     but automated exports should commit directly. The PAT bypasses this rule.
+#
+#     Setup:
+#       1. GitHub Settings → Developer settings → Fine-grained tokens
+#       2. Create token with 'contents: write' for this repo only
+#       3. Add as repository secret named AUTOMATION_TOKEN
+#
+#     For organization repos, you can instead add GitHub Actions to the
+#     ruleset bypass list (no PAT needed). See BRANCHING_STRATEGY.md.
 #
 # =============================================================================
 
@@ -54,7 +67,7 @@ on:
         required: true
         default: 'PPDSDemo'
       create_pr:
-        description: 'Create PR instead of direct commit'
+        description: 'Create PR instead of direct commit (optional, for review workflows)'
         required: false
         default: 'false'
         type: choice
@@ -94,16 +107,17 @@ jobs:
       pull-requests: write
 
     outputs:
-      has_changes: ${{ steps.analyze.outputs.has_real_changes }}
+      has_changes: ${{ steps.analyze.outputs.has-real-changes }}
       version: ${{ steps.version.outputs.new_version }}
-      noise_filtered: ${{ steps.analyze.outputs.noise_count }}
+      noise_filtered: ${{ steps.analyze.outputs.noise-count }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: develop
           fetch-depth: 0  # Full history for tagging
+          token: ${{ secrets.AUTOMATION_TOKEN }}  # PAT to bypass branch protection
 
       - name: Setup PAC CLI
         uses: ./.github/actions/setup-pac-cli
@@ -139,23 +153,23 @@ jobs:
         if: github.event.inputs.skip_noise_filter == 'true'
         run: |
           if git diff --cached --quiet; then
-            echo "has_real_changes=false" >> $GITHUB_OUTPUT
+            echo "has-real-changes=false" >> $GITHUB_OUTPUT
             echo "No changes detected"
           else
-            echo "has_real_changes=true" >> $GITHUB_OUTPUT
+            echo "has-real-changes=true" >> $GITHUB_OUTPUT
             CHANGE_COUNT=$(git diff --cached --name-only | wc -l)
-            echo "real_count=$CHANGE_COUNT" >> $GITHUB_OUTPUT
-            echo "noise_count=0" >> $GITHUB_OUTPUT
-            echo "change_summary=$CHANGE_COUNT changes detected (noise filter disabled)" >> $GITHUB_OUTPUT
+            echo "real-count=$CHANGE_COUNT" >> $GITHUB_OUTPUT
+            echo "noise-count=0" >> $GITHUB_OUTPUT
+            echo "change-summary=$CHANGE_COUNT changes detected (noise filter disabled)" >> $GITHUB_OUTPUT
           fi
 
       - name: Determine if changes exist
         id: has_changes
         run: |
           if [ "${{ github.event.inputs.skip_noise_filter }}" = "true" ]; then
-            echo "result=${{ steps.analyze_raw.outputs.has_real_changes }}" >> $GITHUB_OUTPUT
+            echo "result=${{ steps.analyze_raw.outputs.has-real-changes }}" >> $GITHUB_OUTPUT
           else
-            echo "result=${{ steps.analyze.outputs.has_real_changes }}" >> $GITHUB_OUTPUT
+            echo "result=${{ steps.analyze.outputs.has-real-changes }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Reset staging if no real changes
@@ -218,8 +232,8 @@ jobs:
 
           # Build commit message
           VERSION="${{ steps.version.outputs.new_version }}"
-          REAL_COUNT="${{ steps.analyze.outputs.real_count || steps.analyze_raw.outputs.real_count || '0' }}"
-          NOISE_COUNT="${{ steps.analyze.outputs.noise_count || '0' }}"
+          REAL_COUNT="${{ steps.analyze.outputs.real-count || steps.analyze_raw.outputs.real-count || '0' }}"
+          NOISE_COUNT="${{ steps.analyze.outputs.noise-count || '0' }}"
 
           git commit -m "chore: sync solution from Dev (v${VERSION})
 
@@ -231,24 +245,9 @@ jobs:
 
           git push origin develop
 
-      - name: Create git tag
-        if: steps.has_changes.outputs.result == 'true' && github.event.inputs.create_pr != 'true'
-        run: |
-          VERSION="${{ steps.version.outputs.new_version }}"
-          TAG_NAME="v${VERSION}"
-
-          echo "Creating tag: $TAG_NAME"
-          git tag -a "$TAG_NAME" -m "Release $TAG_NAME
-
-          Solution: ${{ env.SOLUTION_NAME }}
-          Exported from: ${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}
-          Run: ${{ github.run_id }}"
-
-          git push origin "$TAG_NAME"
-
       - name: Create Pull Request
         if: steps.has_changes.outputs.result == 'true' && github.event.inputs.create_pr == 'true'
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: 'chore: sync solution from Dev (v${{ steps.version.outputs.new_version }})'
@@ -266,12 +265,12 @@ jobs:
             | **Environment** | ${{ vars.POWERPLATFORM_ENVIRONMENT_URL }} |
             | **Solution** | ${{ env.SOLUTION_NAME }} |
             | **Version** | ${{ steps.version.outputs.new_version }} |
-            | **Real Changes** | ${{ steps.analyze.outputs.real_count || steps.analyze_raw.outputs.real_count }} |
-            | **Noise Filtered** | ${{ steps.analyze.outputs.noise_count || '0' }} |
+            | **Real Changes** | ${{ steps.analyze.outputs.real-count || steps.analyze_raw.outputs.real-count }} |
+            | **Noise Filtered** | ${{ steps.analyze.outputs.noise-count || '0' }} |
             | **Run ID** | ${{ github.run_id }} |
 
             ### Change Summary
-            ${{ steps.analyze.outputs.change_summary || steps.analyze_raw.outputs.change_summary }}
+            ${{ steps.analyze.outputs.change-summary || steps.analyze_raw.outputs.change-summary }}
 
             Please review the changes before merging.
           labels: |
@@ -289,13 +288,9 @@ jobs:
 
           if [ "${{ steps.has_changes.outputs.result }}" = "true" ]; then
             echo "| Version | ${{ steps.version.outputs.new_version }} |" >> $GITHUB_STEP_SUMMARY
-            echo "| Real Changes | ${{ steps.analyze.outputs.real_count || steps.analyze_raw.outputs.real_count }} |" >> $GITHUB_STEP_SUMMARY
-            echo "| Noise Filtered | ${{ steps.analyze.outputs.noise_count || '0' }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Real Changes | ${{ steps.analyze.outputs.real-count || steps.analyze_raw.outputs.real-count }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Noise Filtered | ${{ steps.analyze.outputs.noise-count || '0' }} |" >> $GITHUB_STEP_SUMMARY
             echo "| Status | **Committed** |" >> $GITHUB_STEP_SUMMARY
-
-            if [ "${{ github.event.inputs.create_pr }}" != "true" ]; then
-              echo "| Git Tag | \`v${{ steps.version.outputs.new_version }}\` |" >> $GITHUB_STEP_SUMMARY
-            fi
           else
             echo "| Status | **No real changes** (noise filtered) |" >> $GITHUB_STEP_SUMMARY
           fi

@@ -149,9 +149,7 @@ This repository includes GitHub Actions workflows for Power Platform ALM:
 | **ci-export.yml** | Nightly / Manual | Exports from Dev with noise filtering |
 | **cd-qa.yml** | Push to develop | Deploys to QA environment |
 | **cd-prod.yml** | Push to main | Deploys managed solution to Production |
-| **nightly-export.yml** | Nightly | Example using ppds-alm workflows |
-| **deploy-qa.yml** | Push to develop | Example using ppds-alm workflows |
-| **deploy-prod.yml** | Push to main | Example using ppds-alm workflows |
+| **pr-validation.yml** | Pull requests | Validates solution builds correctly |
 
 See [docs/strategy/PIPELINE_STRATEGY.md](docs/strategy/PIPELINE_STRATEGY.md) for details.
 
@@ -167,7 +165,7 @@ See [docs/strategy/PIPELINE_STRATEGY.md](docs/strategy/PIPELINE_STRATEGY.md) for
 - [CLAUDE.md](CLAUDE.md) - AI-assistable coding patterns
 - [Plugin Components Reference](docs/reference/PLUGIN_COMPONENTS_REFERENCE.md) - Plugin development
 - [Solution Structure Reference](docs/reference/SOLUTION_STRUCTURE_REFERENCE.md) - ALM structure
-- [Plugin Deployment Design](docs/design/PLUGIN_DEPLOYMENT_DESIGN.md) - Deployment patterns
+- [Tools Reference](docs/reference/TOOLS_REFERENCE.md) - Deployment scripts
 
 ## Contributing
 

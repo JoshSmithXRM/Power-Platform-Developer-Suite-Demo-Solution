@@ -42,6 +42,8 @@
       "Bash(git remote:*)",
       "Bash(git fetch:*)",
       "Bash(git checkout:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet test:*)",
       "Bash(npm:*)",
       "Bash(npx:*)",
       "Bash(node:*)",
@@ -71,8 +73,7 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git rm:*)",
-      "Bash(git push:*)",
-      "WebSearch"
+      "Bash(git push:*)"
     ],
     "deny": [
       "Bash(git push --force:*)",
