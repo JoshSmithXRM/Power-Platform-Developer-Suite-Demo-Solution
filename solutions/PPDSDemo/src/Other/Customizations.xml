@@ -11,6 +11,7 @@
   <optionsets />
   <WebResources />
   <CustomControls />
+  <SdkMessageProcessingSteps />
   <EntityDataProviders />
   <Languages>
     <Language>1033</Language>
