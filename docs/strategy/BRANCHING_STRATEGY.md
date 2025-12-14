@@ -13,7 +13,36 @@ We use a simplified GitFlow model with two primary branches.
 | `main` | Production-ready code | Yes | Prod |
 | `develop` | Integration branch | Yes | QA |
 | `feature/*` | Feature development | No | - |
+| `fix/*` | Bug fixes (normal priority) | No | - |
 | `hotfix/*` | Emergency fixes | No | - |
+
+---
+
+## Branch Policy Enforcement
+
+PRs to `main` are restricted to ensure release integrity. This is enforced automatically by the PR validation workflow.
+
+| Source Branch | Allowed Target | Use Case |
+|---------------|----------------|----------|
+| `feature/*` | `develop` only | New functionality |
+| `fix/*` | `develop` only | Bug fixes (normal priority) |
+| `hotfix/*` | `main` | Emergency production fixes (then cherry-pick to develop) |
+| `develop` | `main` | Release merges |
+
+**Automated Enforcement:**
+
+The `pr-validate.yml` workflow checks branch policy on every PR:
+- PRs to `main` from unauthorized branches (e.g., `feature/*`, `fix/*`) will **fail** with a clear error message
+- PRs to `develop` are allowed from any branch
+- Ensures only tested code reaches production via the proper flow
+
+If you attempt to create a PR from `feature/my-change` to `main`, you'll see:
+
+```
+::error::PRs to main must come from 'develop' or 'hotfix/*' branches
+::error::Source branch 'feature/my-change' is not allowed to target main.
+::error::Please target 'develop' instead, or rename to 'hotfix/*' for emergency fixes.
+```
 
 ---
 
@@ -74,24 +103,27 @@ graph LR
 
 ---
 
-### `feature/*` Branches
+### `feature/*` and `fix/*` Branches
 
-**Purpose:** Isolated development of specific features or changes.
+**Purpose:** Isolated development of specific features or bug fixes.
 
-**Naming:** `feature/{short-description}`
+**Naming:**
+- `feature/{short-description}` - New functionality
+- `fix/{short-description}` - Bug fixes (normal priority)
 
 **Examples:**
 ```
 feature/add-account-validation
 feature/new-contact-form
-feature/update-business-rules
+fix/workflow-error-handling
+fix/form-validation-bug
 ```
 
 **Workflow:**
 1. Create from `develop`
 2. Make changes in Dev environment
-3. Export and commit to feature branch
-4. Create PR to `develop`
+3. Export and commit to feature/fix branch
+4. Create PR to `develop` (PRs to `main` will be rejected)
 5. Delete after merge
 
 ---

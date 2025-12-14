@@ -1,7 +1,8 @@
 # =============================================================================
 # CD: Deploy to Production
 # =============================================================================
-# Deploys the managed solution to the Production environment.
+# Deploys the managed solution to the Production environment and creates a
+# release tag on successful deployment.
 #
 # Triggers:
 #   - Push to main branch (with solution changes)
@@ -11,6 +12,11 @@
 #   - GitHub Environment protection rules (required reviewers)
 #   - Manual confirmation required for workflow_dispatch
 #   - Only deploys from main branch
+#
+# Release Tagging:
+#   - Creates git tag (vX.X.YYYYMMDD.N) after successful deployment
+#   - Tag version comes from solutions/PPDSDemo/version.txt
+#   - Tags are only created on push events (not manual dispatches)
 #
 # =============================================================================
 # GITHUB ENVIRONMENT REQUIRED
@@ -79,3 +85,96 @@ jobs:
       build-plugins: true
       ref: main
     secrets: inherit
+
+  # ===========================================================================
+  # Create Release Tag - After successful deployment
+  # ===========================================================================
+  create-release-tag:
+    name: Create Release Tag
+    runs-on: ubuntu-latest
+    needs: [deploy-to-prod]
+    if: github.event_name == 'push' && needs.deploy-to-prod.outputs.deployed == 'true'
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION_FILE="solutions/PPDSDemo/version.txt"
+
+          if [ -f "$VERSION_FILE" ]; then
+            VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+            echo "Version from file: $VERSION"
+          else
+            # Fallback: extract from Solution.xml
+            SOLUTION_XML="solutions/PPDSDemo/src/Other/Solution.xml"
+            VERSION=$(grep -oP '(?<=<Version>)[^<]+' "$SOLUTION_XML" | head -1 || echo "")
+            echo "Version from Solution.xml: $VERSION"
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not determine version"
+            exit 1
+          fi
+
+          TAG_NAME="v${VERSION}"
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        id: check-tag
+        run: |
+          TAG_NAME="${{ steps.version.outputs.tag_name }}"
+
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Tag $TAG_NAME already exists, skipping"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Tag $TAG_NAME does not exist, will create"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create and push tag
+        if: steps.check-tag.outputs.exists == 'false'
+        run: |
+          TAG_NAME="${{ steps.version.outputs.tag_name }}"
+          VERSION="${{ steps.version.outputs.version }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "$TAG_NAME" -m "Release $VERSION
+
+          Deployed to Production via CD pipeline.
+
+          Commit: ${{ github.sha }}
+          Workflow: ${{ github.run_id }}"
+
+          git push origin "$TAG_NAME"
+
+          echo "Created and pushed tag: $TAG_NAME"
+
+      - name: Tag summary
+        run: |
+          echo "## Release Tag" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.check-tag.outputs.exists }}" = "true" ]; then
+            echo "Tag \`${{ steps.version.outputs.tag_name }}\` already exists - skipped creation" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Created tag: \`${{ steps.version.outputs.tag_name }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ steps.version.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY

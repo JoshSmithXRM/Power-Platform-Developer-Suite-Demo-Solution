@@ -17,6 +17,11 @@
 #
 # This catches code, structural, and quality issues before they reach QA/Production.
 #
+# Branch Policy Enforcement:
+#   - PRs to main: Only allowed from 'develop' or 'hotfix/*' branches
+#   - PRs to develop: Allowed from any branch
+#   - See docs/strategy/BRANCHING_STRATEGY.md for details
+#
 # =============================================================================
 
 name: 'PR: Validate Solution'
@@ -88,11 +93,53 @@ env:
 
 jobs:
   # ============================================
-  # Job 0: Dependency Review (Security)
+  # Job 0: Branch Policy Enforcement
+  # ============================================
+  branch-policy:
+    name: Branch Policy
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Validate PR branch policy
+        if: github.base_ref == 'main'
+        run: |
+          SOURCE="${{ github.head_ref }}"
+          echo "PR source branch: $SOURCE"
+          echo "PR target branch: ${{ github.base_ref }}"
+
+          if [[ "$SOURCE" == "develop" || "$SOURCE" =~ ^hotfix/ ]]; then
+            echo "✓ Branch '$SOURCE' is allowed to target main"
+          else
+            echo ""
+            echo "::error::PRs to main must come from 'develop' or 'hotfix/*' branches"
+            echo "::error::Source branch '$SOURCE' is not allowed to target main."
+            echo "::error::Please target 'develop' instead, or rename to 'hotfix/*' for emergency fixes."
+            echo ""
+            echo "Branch Policy:"
+            echo "  - feature/* and fix/* branches → must target 'develop'"
+            echo "  - hotfix/* branches → can target 'main' (emergency fixes)"
+            echo "  - develop → merges to 'main' (releases)"
+            echo ""
+            echo "See docs/strategy/BRANCHING_STRATEGY.md for details."
+            exit 1
+          fi
+
+      - name: Branch policy passed
+        run: |
+          if [ "${{ github.base_ref }}" = "main" ]; then
+            echo "✓ Branch policy check passed for PR to main"
+          else
+            echo "✓ No branch restriction for PRs to ${{ github.base_ref }}"
+          fi
+
+  # ============================================
+  # Job 1: Dependency Review (Security)
   # ============================================
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
+    needs: [branch-policy]
     if: github.event_name == 'pull_request'
 
     steps:
@@ -108,7 +155,7 @@ jobs:
           deny-licenses: GPL-3.0, AGPL-3.0
 
   # ============================================
-  # Job 1: Build and Test .NET Code
+  # Job 2: Build and Test .NET Code
   # ============================================
   build-code:
     name: Build & Test Code
@@ -152,7 +199,7 @@ jobs:
           echo "::notice::No .NET solution found - skipping code build"
 
   # ============================================
-  # Job 2: Validate Solution Structure
+  # Job 3: Validate Solution Structure
   # ============================================
   validate-solution:
     name: Validate Solution
@@ -374,24 +421,31 @@ jobs:
         run: rm -rf ${{ env.SOLUTION_EXPORT_FOLDER }}
 
   # ============================================
-  # Job 3: Final Status Check
+  # Job 4: Final Status Check
   # ============================================
   status-check:
     name: Validation Status
     runs-on: ubuntu-latest
-    needs: [dependency-review, build-code, validate-solution]
+    needs: [branch-policy, dependency-review, build-code, validate-solution]
     if: always()
 
     steps:
       - name: Check overall status
         run: |
+          BRANCH_POLICY_RESULT="${{ needs.branch-policy.result }}"
           DEPENDENCY_RESULT="${{ needs.dependency-review.result }}"
           BUILD_RESULT="${{ needs.build-code.result }}"
           VALIDATE_RESULT="${{ needs.validate-solution.result }}"
 
+          echo "Branch policy result: $BRANCH_POLICY_RESULT"
           echo "Dependency review result: $DEPENDENCY_RESULT"
           echo "Build job result: $BUILD_RESULT"
           echo "Validate job result: $VALIDATE_RESULT"
+
+          if [ "$BRANCH_POLICY_RESULT" = "failure" ]; then
+            echo "::error::Branch policy check failed - PR source branch not allowed to target this branch"
+            exit 1
+          fi
 
           if [ "$DEPENDENCY_RESULT" = "failure" ]; then
             echo "::error::Dependency review failed - vulnerable or unlicensed dependencies detected"
