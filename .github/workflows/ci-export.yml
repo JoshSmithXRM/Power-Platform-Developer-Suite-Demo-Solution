@@ -37,6 +37,20 @@
 #   Secrets:
 #     - POWERPLATFORM_CLIENT_SECRET: your-service-principal-secret
 #
+# Repository Secret (for branch protection bypass):
+#   - AUTOMATION_TOKEN: Fine-grained PAT with 'contents: write' permission
+#
+#     Why needed: Branch protection on 'develop' requires PRs for human changes,
+#     but automated exports should commit directly. The PAT bypasses this rule.
+#
+#     Setup:
+#       1. GitHub Settings → Developer settings → Fine-grained tokens
+#       2. Create token with 'contents: write' for this repo only
+#       3. Add as repository secret named AUTOMATION_TOKEN
+#
+#     For organization repos, you can instead add GitHub Actions to the
+#     ruleset bypass list (no PAT needed). See BRANCHING_STRATEGY.md.
+#
 # =============================================================================
 
 name: 'CI: Export from Dev'
