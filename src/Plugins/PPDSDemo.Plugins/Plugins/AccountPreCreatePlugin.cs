@@ -1,6 +1,6 @@
 using System;
 using Microsoft.Xrm.Sdk;
-using PPDSDemo.Sdk;
+using PPDS.Plugins;
 
 namespace PPDSDemo.Plugins.Plugins
 {

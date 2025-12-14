@@ -35,7 +35,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Shared\PPDSDemo.Entities\PPDSDemo.Entities.csproj" />
-    <ProjectReference Include="..\..\Shared\PPDSDemo.Sdk\PPDSDemo.Sdk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PPDS.Plugins" Version="1.*" />
   </ItemGroup>
 
   <Import Project="$(PowerAppsTargetsPath)\Microsoft.PowerApps.VisualStudio.Plugin.targets" Condition="Exists('$(PowerAppsTargetsPath)\Microsoft.PowerApps.VisualStudio.Plugin.targets')" />

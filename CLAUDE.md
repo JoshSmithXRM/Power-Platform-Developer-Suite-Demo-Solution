@@ -2,7 +2,12 @@
 
 **Essential rules for AI assistants working on this Dynamics 365 / Dataverse demo solution.**
 
-This repository is a **demonstration solution** for the [Power Platform Developer Suite](https://github.com/your-org/Power-Platform-Developer-Suite) VS Code extension. It showcases plugins, web resources, cloud flows, custom APIs, and ALM patterns.
+This repository is a **demonstration solution** for the [Power Platform Developer Suite](https://github.com/joshsmithxrm/power-platform-developer-suite) VS Code extension. It showcases plugins, web resources, cloud flows, custom APIs, and ALM patterns.
+
+This is part of the **PPDS ecosystem**:
+- **PPDS.Plugins** (NuGet) - Plugin step registration attributes
+- **PPDS.Tools** (PowerShell) - Deployment automation cmdlets
+- **ppds-alm** (GitHub) - CI/CD workflow templates
 
 ---
 
@@ -68,10 +73,11 @@ See [SOLUTION_STRUCTURE_REFERENCE.md](docs/reference/SOLUTION_STRUCTURE_REFERENC
 
 | Area | Technology |
 |------|------------|
-| Plugins | .NET Framework 4.6.2, Microsoft.CrmSdk.CoreAssemblies |
+| Plugins | .NET Framework 4.6.2, Microsoft.CrmSdk.CoreAssemblies, **PPDS.Plugins** |
 | Workflows | Microsoft.CrmSdk.Workflow |
 | Web Resources | TypeScript/JavaScript, Xrm SDK |
 | PCF Controls | TypeScript, React (optional), Fluent UI |
+| Deployment | **PPDS.Tools** (PowerShell module) |
 | Testing | FakeXrmEasy, MSTest |
 
 ---
@@ -129,6 +135,8 @@ Plugins use attribute-based registration with automated deployment tooling.
 ### Step Registration Attributes
 
 ```csharp
+using PPDS.Plugins;  // NuGet package for attributes
+
 [PluginStep(
     Message = "Update",
     EntityLogicalName = "account",
