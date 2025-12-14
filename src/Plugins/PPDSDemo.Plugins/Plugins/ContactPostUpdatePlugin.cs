@@ -1,19 +1,23 @@
 using System;
 using Microsoft.Xrm.Sdk;
+using PPDS.Plugins;
 
 namespace PPDSDemo.Plugins.Plugins
 {
     /// <summary>
     /// Demonstrates post-operation plugin with image handling.
     /// Creates an audit-style note when key contact fields change.
-    ///
-    /// Registration:
-    /// - Entity: contact
-    /// - Message: Update
-    /// - Stage: Post-operation (40)
-    /// - Mode: Asynchronous (recommended for non-critical post operations)
-    /// - Pre-Image: PreImage (with emailaddress1, jobtitle, telephone1)
     /// </summary>
+    [PluginStep(
+        Message = "Update",
+        EntityLogicalName = "contact",
+        Stage = PluginStage.PostOperation,
+        Mode = PluginMode.Asynchronous,
+        FilteringAttributes = "emailaddress1,jobtitle,telephone1")]
+    [PluginImage(
+        ImageType = PluginImageType.PreImage,
+        Name = "PreImage",
+        Attributes = "emailaddress1,jobtitle,telephone1")]
     public class ContactPostUpdatePlugin : PluginBase
     {
         // Fields we want to track changes for

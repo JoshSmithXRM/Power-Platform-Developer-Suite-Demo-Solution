@@ -1,59 +1,80 @@
 # Power Platform Developer Suite Demo Solution
 
-A demonstration solution for Dynamics 365 CE / Dataverse that showcases the capabilities of the [Power Platform Developer Suite](https://github.com/JoshSmithXRM/Power-Platform-Developer-Suite) VS Code extension.
+A reference implementation for Dynamics 365 CE / Dataverse that demonstrates the capabilities of the [Power Platform Developer Suite](https://github.com/joshsmithxrm/power-platform-developer-suite) VS Code extension and the PPDS ecosystem.
 
 ## Purpose
 
-This repository serves three main goals:
+This repository serves four main goals:
 
 1. **Showcase Extension Capabilities** - Provides real-world examples of plugins, web resources, cloud flows, and other components that demonstrate what the VS Code extension can do
 
-2. **Reference Material for AI-Assisted Development** - Contains well-structured, documented patterns that AI coding assistants (like Claude) can use as reference when helping developers build Power Platform solutions
+2. **Reference Architecture / Starter Template** - Clone this repo, replace the demo content, keep the infrastructure (CI/CD, branching, docs) as a starting point for new projects
 
-3. **Best Practices Documentation** - Models proper solution structure, naming conventions, and architectural patterns for Dynamics 365 development
+3. **AI-Assisted Development Reference** - Well-structured patterns in CLAUDE.md that AI coding assistants can use when helping build Power Platform solutions
 
-## What's Included
+4. **Educational Example** - Shows complex ALM concepts at a micro level without clutter - one correct example of each component type
 
-| Component | Description |
-|-----------|-------------|
-| **Plugin Assembly** | Classic IPlugin implementations with proper patterns |
-| **Plugin Package** | Modern NuGet-based plugin package with dependencies |
-| **Custom Workflow Activities** | CodeActivity implementations for classic workflows |
-| **Custom APIs** | Modern extensibility pattern for custom actions |
-| **Web Resources** | JavaScript/TypeScript, HTML, CSS, and images |
-| **PCF Controls** | PowerApps Component Framework controls |
-| **Cloud Flows** | Solution-aware Power Automate flows |
-| **Custom Tables** | Demo entities with relationships |
-| **Environment Variables** | Configuration management examples |
-| **Connection References** | Flow connection dependencies |
-| **Security Roles** | Custom role definitions |
+## Prerequisites
 
-## Getting Started
-
-### Prerequisites
+### Required
 
 - [.NET SDK 6.0+](https://dotnet.microsoft.com/download) (for tooling)
 - [.NET Framework 4.6.2 Developer Pack](https://dotnet.microsoft.com/download/dotnet-framework) (for plugins)
-- [Node.js 18+](https://nodejs.org/) (for web resources and PCF)
-- [Power Platform CLI (PAC)](docs/tools/pac-cli.md) (for solution management)
+- [Power Platform CLI (PAC)](https://learn.microsoft.com/en-us/power-platform/developer/cli/introduction) (for solution management)
+
+### For Plugin Development
+
+- **PPDS.Plugins** (NuGet): Plugin step registration attributes
+  ```bash
+  # Installed via project reference - see src/Plugins/PPDSDemo.Plugins/PPDSDemo.Plugins.csproj
+  ```
+
+### For Plugin Deployment
+
+- **PPDS.Tools** (PowerShell): Deployment automation cmdlets
+  ```powershell
+  Install-Module PPDS.Tools -Scope CurrentUser
+  ```
+
+### For Web Resources & PCF
+
+- [Node.js 18+](https://nodejs.org/)
+
+### Optional
+
 - [Visual Studio 2022](https://visualstudio.microsoft.com/) or [VS Code](https://code.visualstudio.com/)
 
-### Quick Start
+## Quick Start
 
 ```bash
 # Clone the repository
-git clone https://github.com/JoshSmithXRM/Power-Platform-Developer-Suite-Demo-Solution.git
-cd Power-Platform-Developer-Suite-Demo-Solution
+git clone https://github.com/joshsmithxrm/ppds-demo.git
+cd ppds-demo
+
+# Restore NuGet packages
+dotnet restore
 
 # Build the plugin projects
 dotnet build src/Plugins/PPDSDemo.Plugins/PPDSDemo.Plugins.csproj
 
-# Run tests
+# Run tests (when available)
 dotnet test
 
 # Pack the solution (requires PAC CLI)
 pac solution pack --zipfile solutions/exports/PPDSDemo.zip --folder solutions/PPDSDemo/src
 ```
+
+## What's Included
+
+| Component | Description |
+|-----------|-------------|
+| **Plugin Assembly** | Classic IPlugin implementations with PPDS.Plugins attributes |
+| **Plugin Package** | Modern NuGet-based plugin package with external dependencies |
+| **Custom Workflow Activities** | CodeActivity implementations for classic workflows |
+| **Web Resources** | JavaScript/TypeScript, HTML, CSS, and images |
+| **Custom Tables** | Demo entities with relationships |
+| **Solution** | Unpacked solution using `--packagetype Both` |
+| **CI/CD Workflows** | GitHub Actions for export and deployment |
 
 ## Project Structure
 
@@ -61,39 +82,92 @@ pac solution pack --zipfile solutions/exports/PPDSDemo.zip --folder solutions/PP
 /
 ├── src/
 │   ├── Plugins/                    # Plugin assemblies
+│   │   └── PPDSDemo.Plugins/       # Classic plugin assembly
 │   ├── PluginPackages/             # Modern plugin packages
-│   ├── WorkflowActivities/         # Custom workflow activities
-│   ├── CustomAPIs/                 # Custom API implementations
-│   ├── PCF/                        # PCF controls
-│   └── WebResources/               # JS, HTML, CSS, images
+│   │   └── PPDSDemo.PluginPackage/ # NuGet-based plugin package
+│   └── Shared/
+│       └── PPDSDemo.Entities/      # Generated early-bound entities
 │
 ├── solutions/
-│   ├── PPDSDemo/                   # Unpacked solution (source control)
-│   └── exports/                    # Exported solution zips
+│   └── PPDSDemo/
+│       └── src/                    # Unpacked solution (source control)
 │
-├── tests/                          # Unit and integration tests
-├── tools/                          # Build and deployment scripts
+├── tools/                          # Example deployment scripts
+├── .github/                        # CI/CD workflows
 └── docs/                           # Documentation
 ```
 
+## PPDS Ecosystem
+
+This demo solution is part of the Power Platform Developer Suite ecosystem:
+
+| Repository | Purpose | Usage in this Demo |
+|------------|---------|-------------------|
+| [ppds-sdk](https://github.com/joshsmithxrm/ppds-sdk) | NuGet packages for plugin development | `PPDS.Plugins` package for step registration attributes |
+| [ppds-tools](https://github.com/joshsmithxrm/ppds-tools) | PowerShell module for Dataverse operations | Deployment scripts in `tools/` |
+| [ppds-alm](https://github.com/joshsmithxrm/ppds-alm) | CI/CD templates for GitHub Actions | Workflow examples in `.github/workflows/` |
+| [power-platform-developer-suite](https://github.com/joshsmithxrm/power-platform-developer-suite) | VS Code extension | Development experience |
+
+## Plugin Development
+
+Plugins use attribute-based registration with the PPDS.Plugins package:
+
+```csharp
+using PPDS.Plugins;
+
+[PluginStep(
+    Message = "Update",
+    EntityLogicalName = "account",
+    Stage = PluginStage.PostOperation,
+    Mode = PluginMode.Asynchronous,
+    FilteringAttributes = "name,telephone1")]
+[PluginImage(
+    ImageType = PluginImageType.PreImage,
+    Name = "PreImage",
+    Attributes = "name,telephone1")]
+public class AccountAuditPlugin : PluginBase
+{
+    protected override void ExecutePlugin(LocalPluginContext context)
+    {
+        // Plugin implementation
+    }
+}
+```
+
+### Deployment Workflow
+
+1. Build: `dotnet build -c Release`
+2. Extract: `.\tools\Extract-PluginRegistrations.ps1`
+3. Deploy: `.\tools\Deploy-Plugins.ps1`
+
+## CI/CD
+
+This repository includes GitHub Actions workflows for Power Platform ALM:
+
+| Workflow | Trigger | Description |
+|----------|---------|-------------|
+| **ci-export.yml** | Nightly / Manual | Exports from Dev with noise filtering |
+| **cd-qa.yml** | Push to develop | Deploys to QA environment |
+| **cd-prod.yml** | Push to main | Deploys managed solution to Production |
+| **nightly-export.yml** | Nightly | Example using ppds-alm workflows |
+| **deploy-qa.yml** | Push to develop | Example using ppds-alm workflows |
+| **deploy-prod.yml** | Push to main | Example using ppds-alm workflows |
+
+See [docs/strategy/PIPELINE_STRATEGY.md](docs/strategy/PIPELINE_STRATEGY.md) for details.
+
 ## Documentation
 
-- [PAC CLI Setup](docs/tools/pac-cli.md) - Installing and configuring Power Platform CLI
-- [Plugin Development](docs/development/plugins.md) - Plugin patterns and best practices
-- [Web Resources](docs/development/web-resources.md) - JavaScript/TypeScript patterns
-- [Solution Management](docs/development/solutions.md) - Working with solutions
+### Strategy (The "Why")
+- [ALM Overview](docs/strategy/ALM_OVERVIEW.md) - High-level ALM philosophy
+- [Environment Strategy](docs/strategy/ENVIRONMENT_STRATEGY.md) - Dev/QA/Prod configuration
+- [Branching Strategy](docs/strategy/BRANCHING_STRATEGY.md) - develop/main workflow
+- [Pipeline Strategy](docs/strategy/PIPELINE_STRATEGY.md) - CI/CD approach
 
-## Extension Integration
-
-This demo is designed to work with the Power Platform Developer Suite VS Code extension:
-
-| Extension Feature | What to Try |
-|-------------------|-------------|
-| **Plugin Trace Viewer** | Execute plugins and view traces |
-| **Metadata Browser** | Explore custom tables and relationships |
-| **Web Resources Manager** | Edit and publish web resources |
-| **Data Explorer** | Query custom tables with FetchXML/SQL |
-| **Solutions Explorer** | Browse solution components |
+### Reference
+- [CLAUDE.md](CLAUDE.md) - AI-assistable coding patterns
+- [Plugin Components Reference](docs/reference/PLUGIN_COMPONENTS_REFERENCE.md) - Plugin development
+- [Solution Structure Reference](docs/reference/SOLUTION_STRUCTURE_REFERENCE.md) - ALM structure
+- [Plugin Deployment Design](docs/design/PLUGIN_DEPLOYMENT_DESIGN.md) - Deployment patterns
 
 ## Contributing
 
@@ -102,7 +176,3 @@ This is primarily a demonstration repository. If you find issues or have suggest
 ## License
 
 MIT License - See [LICENSE](LICENSE) for details.
-
-## Related Projects
-
-- [Power Platform Developer Suite](https://github.com/JoshSmithXRM/Power-Platform-Developer-Suite) - The VS Code extension this demo showcases

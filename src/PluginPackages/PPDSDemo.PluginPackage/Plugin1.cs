@@ -1,5 +1,6 @@
 using Microsoft.Xrm.Sdk;
 using Newtonsoft.Json;
+using PPDS.Plugins;
 using System;
 using System.Collections.Generic;
 
@@ -13,13 +14,17 @@ namespace PPDSDemo.PluginPackage
     /// - Include NuGet dependencies that get deployed with your plugin
     /// - Use libraries like Newtonsoft.Json, Azure SDK, etc.
     /// - Package multiple plugins in a single deployable unit
-    ///
-    /// Registration:
-    /// - Entity: account
-    /// - Message: Update
-    /// - Stage: Post-operation (40)
-    /// - Mode: Asynchronous
     /// </summary>
+    [PluginStep(
+        Message = "Update",
+        EntityLogicalName = "account",
+        Stage = PluginStage.PostOperation,
+        Mode = PluginMode.Asynchronous,
+        FilteringAttributes = "name,telephone1,revenue")]
+    [PluginImage(
+        ImageType = PluginImageType.PreImage,
+        Name = "PreImage",
+        Attributes = "name,telephone1,revenue")]
     public class AccountAuditLogPlugin : PluginBase
     {
         public AccountAuditLogPlugin(string unsecureConfiguration, string secureConfiguration)

@@ -1,0 +1,59 @@
+{
+  "$schema": "../../../tools/schemas/plugin-registration.schema.json",
+  "version": "1.0",
+  "generatedAt": "2025-12-14T01:39:13Z",
+  "assemblies": [
+    {
+      "name": "PPDSDemo.Plugins",
+      "type": "Assembly",
+      "solution": "PPDSDemo",
+      "path": "./src/Plugins/PPDSDemo.Plugins/bin/Release/net462/PPDSDemo.Plugins.dll",
+      "plugins": [
+        {
+          "typeName": "PPDSDemo.Plugins.Plugins.AccountPreCreatePlugin",
+          "steps": [
+            {
+              "name": "PPDSDemo.Plugins.Plugins.AccountPreCreatePlugin: Create of account",
+              "message": "Create",
+              "entity": "account",
+              "stage": "PreOperation",
+              "mode": "Synchronous",
+              "executionOrder": 1,
+              "filteringAttributes": null,
+              "configuration": null,
+              "images": []
+            }
+          ]
+        },
+        {
+          "typeName": "PPDSDemo.Plugins.Plugins.ContactPostUpdatePlugin",
+          "steps": [
+            {
+              "name": "PPDSDemo.Plugins.Plugins.ContactPostUpdatePlugin: Update of contact",
+              "message": "Update",
+              "entity": "contact",
+              "stage": "PostOperation",
+              "mode": "Asynchronous",
+              "executionOrder": 1,
+              "filteringAttributes": "emailaddress1,jobtitle,telephone1",
+              "configuration": null,
+              "images": [
+                {
+                  "name": "PreImage",
+                  "imageType": "PreImage",
+                  "attributes": "emailaddress1,jobtitle,telephone1",
+                  "entityAlias": "PreImage"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "allTypeNames": [
+        "PPDSDemo.Plugins.WorkflowActivities.SendNotificationActivity",
+        "PPDSDemo.Plugins.Plugins.AccountPreCreatePlugin",
+        "PPDSDemo.Plugins.Plugins.ContactPostUpdatePlugin"
+      ]
+    }
+  ]
+}
