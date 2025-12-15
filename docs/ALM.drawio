@@ -1,4 +1,4 @@
-<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.0.3 Chrome/140.0.7339.249 Electron/38.7.0 Safari/537.36" version="29.0.3" pages="4">
+<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.0.3 Chrome/140.0.7339.249 Electron/38.7.0 Safari/537.36" version="29.0.3" pages="5">
   <diagram name="High-Level Overview" id="overview">
     <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0" adaptiveColors="auto">
       <root>
@@ -8,37 +8,37 @@
           <mxGeometry x="300" y="20" width="500" height="40" as="geometry" />
         </mxCell>
         <mxCell id="env-header" value="ENVIRONMENTS" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontStyle=1;fontColor=#666666;" parent="1" vertex="1">
-          <mxGeometry x="40" y="80" width="150" height="20" as="geometry" />
+          <mxGeometry x="40" y="130" width="150" height="20" as="geometry" />
         </mxCell>
         <mxCell id="dev-env" value="DEV Environment" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontStyle=1;fontColor=#333333;" parent="1" vertex="1">
-          <mxGeometry x="80" y="120" width="140" height="60" as="geometry" />
+          <mxGeometry x="260" y="110" width="140" height="60" as="geometry" />
         </mxCell>
         <mxCell id="dev-desc" value="Development &amp; Customization" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#666666;" parent="1" vertex="1">
-          <mxGeometry x="65" y="180" width="170" height="20" as="geometry" />
+          <mxGeometry x="245" y="90" width="170" height="20" as="geometry" />
         </mxCell>
         <mxCell id="qa-env" value="QA Environment" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontStyle=1;fontColor=#333333;" parent="1" vertex="1">
-          <mxGeometry x="490" y="120" width="140" height="60" as="geometry" />
+          <mxGeometry x="490" y="110" width="140" height="60" as="geometry" />
         </mxCell>
         <mxCell id="qa-desc" value="Testing &amp; Validation" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#666666;" parent="1" vertex="1">
-          <mxGeometry x="490" y="180" width="140" height="20" as="geometry" />
+          <mxGeometry x="490" y="90" width="140" height="20" as="geometry" />
         </mxCell>
         <mxCell id="prod-env" value="PROD Environment" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontStyle=1;fontColor=#333333;" parent="1" vertex="1">
-          <mxGeometry x="890" y="120" width="140" height="60" as="geometry" />
+          <mxGeometry x="775" y="110" width="140" height="60" as="geometry" />
         </mxCell>
         <mxCell id="prod-desc" value="Production" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#666666;" parent="1" vertex="1">
-          <mxGeometry x="890" y="180" width="140" height="20" as="geometry" />
+          <mxGeometry x="780" y="90" width="140" height="20" as="geometry" />
         </mxCell>
         <mxCell id="git-header" value="GIT BRANCHES" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontStyle=1;fontColor=#666666;" parent="1" vertex="1">
-          <mxGeometry x="40" y="220" width="150" height="20" as="geometry" />
+          <mxGeometry x="45" y="250" width="150" height="20" as="geometry" />
         </mxCell>
         <mxCell id="develop-branch" value="develop" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontStyle=1;fontColor=#333333;" parent="1" vertex="1">
-          <mxGeometry x="280" y="250" width="540" height="40" as="geometry" />
+          <mxGeometry x="445" y="240" width="230" height="40" as="geometry" />
         </mxCell>
         <mxCell id="main-branch" value="main" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontStyle=1;fontColor=#333333;" parent="1" vertex="1">
-          <mxGeometry x="700" y="310" width="330" height="40" as="geometry" />
+          <mxGeometry x="770" y="240" width="150" height="40" as="geometry" />
         </mxCell>
         <mxCell id="feature-branch" value="feature/*" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontStyle=1;dashed=1;fontColor=#333333;" parent="1" vertex="1">
-          <mxGeometry x="80" y="310" width="160" height="40" as="geometry" />
+          <mxGeometry x="220" y="240" width="110" height="40" as="geometry" />
         </mxCell>
         <mxCell id="workflow-header" value="WORKFLOWS" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontStyle=1;fontColor=#666666;" parent="1" vertex="1">
           <mxGeometry x="40" y="380" width="150" height="20" as="geometry" />
@@ -194,6 +194,9 @@
         <mxCell id="summary-text" value="1. Developers customize in Dev environment&lt;br&gt;2. Nightly export syncs changes to develop branch (with noise filtering)&lt;br&gt;3. CI Build creates versioned artifact (PPDSDemo-{run#}.zip), auto-deploys to QA&lt;br&gt;4. Version comparison skips import if QA has same/newer version&lt;br&gt;5. After QA testing, PR from develop to main triggers validation&lt;br&gt;6. Merge to main deploys to Production and creates release tag (v{version})" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#333333;" parent="1" vertex="1">
           <mxGeometry x="490" y="545" width="540" height="70" as="geometry" />
         </mxCell>
+        <mxCell id="hCwIelPKBYAtkVOMxKjG-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="dev-desc" target="dev-desc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
@@ -259,7 +262,7 @@
         <mxCell id="build-trigger" value="Triggers: Push to develop (solution/plugin paths)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#666666;" parent="1" vertex="1">
           <mxGeometry x="570" y="110" width="300" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="build-paths" value="Path filters: solutions/PPDSDemo/src/**, src/Plugins/**, src/PluginPackages/**" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=2;fontColor=#999999;" parent="1" vertex="1">
+        <mxCell id="build-paths" value="Path filters: solutions/PPDSDemo/src/**, src/Plugins/**, src/PluginPackages/**" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=2;fontColor=#999999;" vertex="1" parent="1">
           <mxGeometry x="570" y="125" width="400" height="15" as="geometry" />
         </mxCell>
         <mxCell id="bld-step1" value="1. Checkout" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;fontColor=#333333;" parent="1" vertex="1">
@@ -307,7 +310,7 @@
         <mxCell id="plugin-trigger" value="Triggers: Push to develop (plugin paths only)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#666666;" parent="1" vertex="1">
           <mxGeometry x="50" y="470" width="300" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="plugin-paths" value="Path filters: src/Plugins/**, src/PluginPackages/**" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=2;fontColor=#999999;" parent="1" vertex="1">
+        <mxCell id="plugin-paths" value="Path filters: src/Plugins/**, src/PluginPackages/**" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=2;fontColor=#999999;" vertex="1" parent="1">
           <mxGeometry x="50" y="485" width="300" height="15" as="geometry" />
         </mxCell>
         <mxCell id="plg-step1" value="1. Build Plugins" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=10;fontColor=#333333;" parent="1" vertex="1">
