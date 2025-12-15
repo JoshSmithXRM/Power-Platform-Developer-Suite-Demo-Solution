@@ -124,21 +124,53 @@ jobs:
           solution-folder: solutions/${{ steps.metadata.outputs.solution-name }}/src
 
       # ========================================
-      # Debug: Verify plugin package location
+      # Validate Plugin Binaries Before Pack
       # ========================================
 
-      - name: Verify plugin package structure
-        if: steps.copy-packages.outputs.copied-count != '' && steps.copy-packages.outputs.copied-count != '0'
+      - name: Validate plugin binaries exist
+        if: steps.dotnet-build.outputs.build-succeeded == 'true'
         run: |
-          echo "=== Plugin Package Structure ==="
           SOLUTION_FOLDER="solutions/${{ steps.metadata.outputs.solution-name }}/src"
-          
-          echo "Looking in: $SOLUTION_FOLDER/pluginpackages"
-          find "$SOLUTION_FOLDER/pluginpackages" -type f -name "*.nupkg" 2>/dev/null || echo "No .nupkg files found"
-          
+          ERRORS=0
+
+          echo "=== Validating Plugin Binaries ==="
+
+          # Check classic assembly was copied
+          if [ -n "${{ steps.dotnet-build.outputs.classic-assembly-path }}" ]; then
+            ASSEMBLY_PATH="${{ steps.copy-assemblies.outputs.target-path }}"
+            if [ -n "$ASSEMBLY_PATH" ] && [ -f "$ASSEMBLY_PATH" ]; then
+              echo "✅ Classic assembly: $ASSEMBLY_PATH"
+              ls -la "$ASSEMBLY_PATH"
+            else
+              echo "::error::Classic assembly not found at expected location"
+              echo "Expected: $ASSEMBLY_PATH"
+              find "$SOLUTION_FOLDER/PluginAssemblies" -type f -name "*.dll" 2>/dev/null || echo "No DLLs found in PluginAssemblies"
+              ERRORS=$((ERRORS + 1))
+            fi
+          fi
+
+          # Check plugin package was copied
+          if [ -n "${{ steps.dotnet-build.outputs.plugin-package-path }}" ]; then
+            PACKAGE_PATH="${{ steps.copy-packages.outputs.target-path }}"
+            if [ -n "$PACKAGE_PATH" ] && [ -f "$PACKAGE_PATH" ]; then
+              echo "✅ Plugin package: $PACKAGE_PATH"
+              ls -la "$PACKAGE_PATH"
+            else
+              echo "::error::Plugin package not found at expected location"
+              echo "Expected: $PACKAGE_PATH"
+              find "$SOLUTION_FOLDER/pluginpackages" -type f -name "*.nupkg" 2>/dev/null || echo "No .nupkg files found in pluginpackages"
+              ERRORS=$((ERRORS + 1))
+            fi
+          fi
+
+          if [ $ERRORS -gt 0 ]; then
+            echo ""
+            echo "::error::$ERRORS plugin binary validation(s) failed. Solution pack will not include all plugins."
+            exit 1
+          fi
+
           echo ""
-          echo "Full structure:"
-          find "$SOLUTION_FOLDER/pluginpackages" -type f 2>/dev/null || echo "No files found"
+          echo "All plugin binaries validated successfully."
 
       # ========================================
       # Pack Solution
@@ -165,7 +197,10 @@ jobs:
           SOLUTION_ZIP="${{ steps.pack.outputs.solution-path }}"
           echo "Solution zip: $SOLUTION_ZIP"
           echo ""
-          echo "Plugin package files in zip:"
+          echo "PluginAssemblies in zip:"
+          unzip -l "$SOLUTION_ZIP" | grep -i "PluginAssemblies" || echo "No PluginAssemblies entries found"
+          echo ""
+          echo "Plugin packages in zip:"
           unzip -l "$SOLUTION_ZIP" | grep -i "pluginpackage" || echo "No pluginpackage entries found"
           echo ""
           echo "All files in zip:"
@@ -176,7 +211,7 @@ jobs:
       # ========================================
 
       - name: Upload solution artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ steps.metadata.outputs.artifact-name }}
           path: ${{ steps.pack.outputs.solution-path }}
@@ -206,14 +241,12 @@ jobs:
             echo "| .NET Build | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
           fi
           
-          ASSEMBLY_COUNT="${{ steps.copy-assemblies.outputs.copied-count }}"
-          if [ -n "$ASSEMBLY_COUNT" ] && [ "$ASSEMBLY_COUNT" != "0" ]; then
-            echo "| Plugin Assemblies | Copied ($ASSEMBLY_COUNT) |" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ steps.copy-assemblies.outputs.target-path }}" ]; then
+            echo "| Plugin Assembly | ✅ Copied |" >> $GITHUB_STEP_SUMMARY
           fi
-          
-          PACKAGE_COUNT="${{ steps.copy-packages.outputs.copied-count }}"
-          if [ -n "$PACKAGE_COUNT" ] && [ "$PACKAGE_COUNT" != "0" ]; then
-            echo "| Plugin Packages | Copied ($PACKAGE_COUNT) |" >> $GITHUB_STEP_SUMMARY
+
+          if [ -n "${{ steps.copy-packages.outputs.target-path }}" ]; then
+            echo "| Plugin Package | ✅ Copied |" >> $GITHUB_STEP_SUMMARY
           fi
           
           echo "" >> $GITHUB_STEP_SUMMARY
