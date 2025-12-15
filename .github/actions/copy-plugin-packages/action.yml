@@ -99,11 +99,10 @@ runs:
         echo "Source filename: $SOURCE_FILE"
 
         # Extract package ID by removing version and .nupkg extension
-        # Pattern: PackageName.X.Y.Z.W.nupkg or PackageName.X.Y.Z.nupkg -> PackageName
-        # Handle both 3-part (semantic) and 4-part (.NET) versions
-        # ppds_PPDSDemo.PluginPackage.1.0.0.0.nupkg -> ppds_PPDSDemo.PluginPackage
-        # PPDSDemo.PluginPackage.1.0.0.nupkg -> PPDSDemo.PluginPackage
-        PACKAGE_ID=$(echo "$SOURCE_FILE" | sed -E 's/\.[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9.]+)?\.nupkg$//')
+        # NuGet normalizes versions to 3-part (strips trailing .0)
+        # Pattern: PackageName.X.Y.Z.nupkg -> PackageName
+        # ppds_PPDSDemo.PluginPackage.1.0.0.nupkg -> ppds_PPDSDemo.PluginPackage
+        PACKAGE_ID=$(echo "$SOURCE_FILE" | sed -E 's/\.[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?\.nupkg$//')
 
         if [ -z "$PACKAGE_ID" ]; then
           echo "::error::Could not extract package ID from filename: $SOURCE_FILE"
