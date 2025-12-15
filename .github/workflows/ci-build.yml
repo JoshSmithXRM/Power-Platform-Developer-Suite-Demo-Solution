@@ -1,0 +1,222 @@
+# =============================================================================
+# CI: Build Solution
+# =============================================================================
+# Builds the solution and creates deployment artifacts. This separates the
+# build phase from deployment, enabling:
+#   - Faster deployments (no rebuild needed)
+#   - Debuggable artifacts (download and inspect the .zip)
+#   - Consistent deployments (same artifact to QA and Prod)
+#
+# Triggers:
+#   - Push to develop branch (with solution changes)
+#   - Manual workflow dispatch
+#
+# Outputs:
+#   - Managed solution .zip as artifact
+#   - Build metadata for downstream workflows
+#
+# =============================================================================
+
+name: 'CI: Build Solution'
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - 'solutions/PPDSDemo/src/**'
+      - 'src/Plugins/**'
+      - 'src/PluginPackages/**'
+
+  workflow_dispatch:
+    inputs:
+      solution_name:
+        description: 'Solution unique name'
+        required: true
+        default: 'PPDSDemo'
+
+# Ensure only one build runs at a time for the same branch
+concurrency:
+  group: ci-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    outputs:
+      artifact-name: ${{ steps.metadata.outputs.artifact-name }}
+      solution-version: ${{ steps.version.outputs.version }}
+      build-succeeded: ${{ steps.dotnet-build.outputs.succeeded }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract solution metadata
+        id: metadata
+        run: |
+          SOLUTION_NAME="${{ github.event.inputs.solution_name || 'PPDSDemo' }}"
+          ARTIFACT_NAME="${SOLUTION_NAME}-${{ github.run_number }}"
+          
+          echo "solution-name=$SOLUTION_NAME" >> $GITHUB_OUTPUT
+          echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+          echo "Solution: $SOLUTION_NAME"
+          echo "Artifact: $ARTIFACT_NAME"
+
+      - name: Extract solution version
+        id: version
+        run: |
+          SOLUTION_XML="solutions/${{ steps.metadata.outputs.solution-name }}/src/Other/Solution.xml"
+          if [ -f "$SOLUTION_XML" ]; then
+            VERSION=$(grep -oP '(?<=<Version>)[^<]+' "$SOLUTION_XML" | head -1)
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Solution version: $VERSION"
+          else
+            echo "version=unknown" >> $GITHUB_OUTPUT
+            echo "::warning::Solution.xml not found"
+          fi
+
+      # ========================================
+      # .NET Build (Plugins)
+      # ========================================
+
+      - name: Detect .NET solution
+        id: detect-dotnet
+        run: |
+          SLN_PATH=$(find . -maxdepth 1 -name "*.sln" | head -1 || echo "")
+          if [ -n "$SLN_PATH" ] && [ -f "$SLN_PATH" ]; then
+            echo "Found .NET solution: $SLN_PATH"
+            echo "solution-path=$SLN_PATH" >> $GITHUB_OUTPUT
+            echo "has-solution=true" >> $GITHUB_OUTPUT
+          else
+            echo "No .NET solution found"
+            echo "has-solution=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build .NET solution
+        id: dotnet-build
+        if: steps.detect-dotnet.outputs.has-solution == 'true'
+        uses: ./.github/actions/build-solution
+        with:
+          solution-path: ${{ steps.detect-dotnet.outputs.solution-path }}
+          configuration: Release
+          run-tests: 'false'
+
+      # ========================================
+      # Copy Plugin Binaries to Solution
+      # ========================================
+
+      - name: Copy plugin assemblies (classic)
+        id: copy-assemblies
+        if: steps.dotnet-build.outputs.build-succeeded == 'true' && steps.dotnet-build.outputs.classic-assembly-path != ''
+        uses: ./.github/actions/copy-plugin-assemblies
+        with:
+          source-assembly: ${{ steps.dotnet-build.outputs.classic-assembly-path }}
+          solution-folder: solutions/${{ steps.metadata.outputs.solution-name }}/src
+
+      - name: Copy plugin packages (modern)
+        id: copy-packages
+        if: steps.dotnet-build.outputs.build-succeeded == 'true' && steps.dotnet-build.outputs.plugin-package-path != ''
+        uses: ./.github/actions/copy-plugin-packages
+        with:
+          source-package: ${{ steps.dotnet-build.outputs.plugin-package-path }}
+          solution-folder: solutions/${{ steps.metadata.outputs.solution-name }}/src
+
+      # ========================================
+      # Debug: Verify plugin package location
+      # ========================================
+
+      - name: Verify plugin package structure
+        if: steps.copy-packages.outputs.copied-count != '' && steps.copy-packages.outputs.copied-count != '0'
+        run: |
+          echo "=== Plugin Package Structure ==="
+          SOLUTION_FOLDER="solutions/${{ steps.metadata.outputs.solution-name }}/src"
+          
+          echo "Looking in: $SOLUTION_FOLDER/pluginpackages"
+          find "$SOLUTION_FOLDER/pluginpackages" -type f -name "*.nupkg" 2>/dev/null || echo "No .nupkg files found"
+          
+          echo ""
+          echo "Full structure:"
+          find "$SOLUTION_FOLDER/pluginpackages" -type f 2>/dev/null || echo "No files found"
+
+      # ========================================
+      # Pack Solution
+      # ========================================
+
+      - name: Setup PAC CLI
+        uses: ./.github/actions/setup-pac-cli
+
+      - name: Pack solution (Managed)
+        id: pack
+        uses: ./.github/actions/pack-solution
+        with:
+          solution-folder: solutions/${{ steps.metadata.outputs.solution-name }}/src
+          solution-name: ${{ steps.metadata.outputs.solution-name }}
+          package-type: Managed
+
+      # ========================================
+      # Debug: Verify packed solution contents
+      # ========================================
+
+      - name: Verify packed solution contents
+        run: |
+          echo "=== Packed Solution Contents ==="
+          SOLUTION_ZIP="${{ steps.pack.outputs.solution-path }}"
+          echo "Solution zip: $SOLUTION_ZIP"
+          echo ""
+          echo "Plugin package files in zip:"
+          unzip -l "$SOLUTION_ZIP" | grep -i "pluginpackage" || echo "No pluginpackage entries found"
+          echo ""
+          echo "All files in zip:"
+          unzip -l "$SOLUTION_ZIP" | head -50
+
+      # ========================================
+      # Upload Artifact
+      # ========================================
+
+      - name: Upload solution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.metadata.outputs.artifact-name }}
+          path: ${{ steps.pack.outputs.solution-path }}
+          retention-days: 30
+          if-no-files-found: error
+
+      # ========================================
+      # Summary
+      # ========================================
+
+      - name: Build summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Solution | ${{ steps.metadata.outputs.solution-name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ steps.version.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Artifact | \`${{ steps.metadata.outputs.artifact-name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.dotnet-build.outputs.build-succeeded }}" = "true" ]; then
+            echo "| .NET Build | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.detect-dotnet.outputs.has-solution }}" = "false" ]; then
+            echo "| .NET Build | ⏭️ Skipped (no .sln) |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| .NET Build | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          ASSEMBLY_COUNT="${{ steps.copy-assemblies.outputs.copied-count }}"
+          if [ -n "$ASSEMBLY_COUNT" ] && [ "$ASSEMBLY_COUNT" != "0" ]; then
+            echo "| Plugin Assemblies | Copied ($ASSEMBLY_COUNT) |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          PACKAGE_COUNT="${{ steps.copy-packages.outputs.copied-count }}"
+          if [ -n "$PACKAGE_COUNT" ] && [ "$PACKAGE_COUNT" != "0" ]; then
+            echo "| Plugin Packages | Copied ($PACKAGE_COUNT) |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "This artifact will be automatically deployed to QA." >> $GITHUB_STEP_SUMMARY
+          echo "To deploy manually, use the **CD: Deploy to QA** workflow." >> $GITHUB_STEP_SUMMARY
