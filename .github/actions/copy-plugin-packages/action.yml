@@ -99,10 +99,10 @@ runs:
         echo "Source filename: $SOURCE_FILE"
 
         # Extract package ID by removing version and .nupkg extension
+        # NuGet normalizes versions to 3-part (strips trailing .0)
         # Pattern: PackageName.X.Y.Z.nupkg -> PackageName
-        # Use regex to strip semantic version pattern
-        # PPDSDemo.PluginPackage.1.0.0.nupkg -> PPDSDemo.PluginPackage
-        PACKAGE_ID=$(echo "$SOURCE_FILE" | sed -E 's/\.[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?\.nupkg$//')
+        # ppds_PPDSDemo.PluginPackage.1.0.0.nupkg -> ppds_PPDSDemo.PluginPackage
+        PACKAGE_ID=$(echo "$SOURCE_FILE" | sed -E 's/\.[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?\.nupkg$//')
 
         if [ -z "$PACKAGE_ID" ]; then
           echo "::error::Could not extract package ID from filename: $SOURCE_FILE"
@@ -133,11 +133,28 @@ runs:
           local location_name="$2"
 
           # Find pluginpackages folder matching our package ID
-          # Pattern: *_PackageID (e.g., ppds_PPDSDemo.PluginPackage)
-          local package_folders=$(find "$base_path" -maxdepth 1 -type d -name "*_${PACKAGE_ID}" 2>/dev/null || echo "")
+          # The folder name IS the package ID (e.g., ppds_PPDSDemo.PluginPackage)
+          # We search for exact match or with publisher prefix pattern
+          local package_folders=""
+          
+          # First try exact match (folder name equals package ID)
+          if [ -d "$base_path/${PACKAGE_ID}" ]; then
+            package_folders="$base_path/${PACKAGE_ID}"
+            echo "Found exact match: $package_folders"
+          else
+            # Fallback: look for folders ending with the package ID (for cases where 
+            # package ID doesn't include publisher prefix but folder does)
+            package_folders=$(find "$base_path" -maxdepth 1 -type d -name "*_${PACKAGE_ID}" 2>/dev/null || echo "")
+            if [ -n "$package_folders" ]; then
+              echo "Found with prefix pattern: $package_folders"
+            fi
+          fi
 
           if [ -z "$package_folders" ]; then
             echo "No matching pluginpackages folder found in $location_name for package: $PACKAGE_ID"
+            echo "  Searched in: $base_path"
+            echo "  Available folders:"
+            ls -la "$base_path" 2>/dev/null || echo "    (directory not accessible)"
             return
           fi
 
@@ -146,7 +163,7 @@ runs:
             local package_subfolder="$folder/package"
 
             if [ ! -d "$package_subfolder" ]; then
-              echo "::warning::package/ subfolder not found in $folder, creating it"
+              echo "Creating package/ subfolder in $folder"
               mkdir -p "$package_subfolder"
             fi
 
@@ -161,7 +178,10 @@ runs:
             if [ -f "$target_path" ]; then
               COPIED_COUNT=$((COPIED_COUNT + 1))
               TARGET_PATHS="${TARGET_PATHS}${target_path}\n"
-              echo "Successfully copied to $location_name"
+              echo "Successfully copied to $location_name: $target_path"
+              ls -la "$target_path"
+            else
+              echo "::error::Failed to copy to $target_path"
             fi
           done
         }
