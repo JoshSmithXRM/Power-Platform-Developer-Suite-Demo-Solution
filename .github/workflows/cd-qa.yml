@@ -4,12 +4,13 @@
 # Deploys the managed solution to the QA environment for testing.
 #
 # Triggers:
-#   - Push to develop branch (with solution changes)
-#   - Manual workflow dispatch
+#   - Automatically after CI Build workflow completes successfully
+#   - Manual workflow dispatch (downloads latest artifact or builds fresh)
 #
-# This workflow is typically triggered automatically when:
-#   - ci-export.yml commits changes to develop (nightly sync)
-#   - A feature branch PR is merged to develop
+# This workflow uses pre-built artifacts from ci-build.yml, enabling:
+#   - Faster deployments (no rebuild needed)
+#   - Consistent artifacts (same build goes to QA and Prod)
+#   - Debuggable artifacts (download and inspect the .zip)
 #
 # =============================================================================
 # GITHUB ENVIRONMENT REQUIRED
@@ -28,12 +29,13 @@
 name: 'CD: Deploy to QA'
 
 on:
-  # Deploy when develop branch is updated with solution changes
-  push:
+  # Trigger after CI Build completes
+  workflow_run:
+    workflows: ["CI: Build Solution"]
+    types:
+      - completed
     branches:
       - develop
-    paths:
-      - 'solutions/PPDSDemo/src/**'
 
   # Manual trigger
   workflow_dispatch:
@@ -42,14 +44,139 @@ on:
         description: 'Solution unique name'
         required: true
         default: 'PPDSDemo'
+      run_id:
+        description: 'CI Build run ID to deploy (leave empty for latest)'
+        required: false
+        default: ''
 
 jobs:
   deploy-to-qa:
-    uses: ./.github/workflows/_deploy-solution.yml
-    with:
-      environment-name: QA
-      solution-name: ${{ github.event.inputs.solution_name || 'PPDSDemo' }}
-      solution-folder: solutions/PPDSDemo/src
-      build-plugins: true
-      ref: develop
-    secrets: inherit
+    runs-on: ubuntu-latest
+    # Only run if CI Build succeeded (for workflow_run trigger)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    environment: QA
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine artifact source
+        id: source
+        run: |
+          SOLUTION_NAME="${{ github.event.inputs.solution_name || 'PPDSDemo' }}"
+          echo "solution-name=$SOLUTION_NAME" >> $GITHUB_OUTPUT
+          
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            # Triggered by CI Build - use that run's artifact
+            RUN_ID="${{ github.event.workflow_run.id }}"
+            echo "Using artifact from triggering workflow run: $RUN_ID"
+          elif [ -n "${{ github.event.inputs.run_id }}" ]; then
+            # Manual trigger with specific run ID
+            RUN_ID="${{ github.event.inputs.run_id }}"
+            echo "Using artifact from specified run: $RUN_ID"
+          else
+            # Manual trigger - find latest successful CI Build
+            echo "Finding latest CI Build artifact..."
+            RUN_ID=""
+          fi
+          
+          echo "run-id=$RUN_ID" >> $GITHUB_OUTPUT
+
+      - name: Download artifact from triggering workflow
+        if: steps.source.outputs.run-id != ''
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ steps.source.outputs.solution-name }}-${{ github.event.workflow_run.run_number || github.event.inputs.run_id }}
+          path: ./artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.source.outputs.run-id }}
+
+      - name: Download latest artifact (manual trigger)
+        if: steps.source.outputs.run-id == ''
+        uses: dawidd6/action-download-artifact@v11
+        with:
+          workflow: ci-build.yml
+          branch: develop
+          name_is_regexp: true
+          name: ${{ steps.source.outputs.solution-name }}-.*
+          path: ./artifact
+          search_artifacts: true
+          if_no_artifact_found: fail
+
+      - name: Locate solution file
+        id: locate
+        run: |
+          SOLUTION_FILE=$(find ./artifact -name "*.zip" -type f | head -1)
+          if [ -z "$SOLUTION_FILE" ]; then
+            echo "::error::No solution .zip found in artifact"
+            exit 1
+          fi
+          echo "Found solution: $SOLUTION_FILE"
+          echo "solution-path=$SOLUTION_FILE" >> $GITHUB_OUTPUT
+          
+          # Extract version from filename or zip contents
+          echo "Artifact contents:"
+          ls -la ./artifact/
+
+      - name: Setup PAC CLI
+        uses: ./.github/actions/setup-pac-cli
+
+      - name: Authenticate to QA environment
+        uses: ./.github/actions/pac-auth
+        with:
+          environment-url: ${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}
+          tenant-id: ${{ vars.POWERPLATFORM_TENANT_ID }}
+          client-id: ${{ vars.POWERPLATFORM_CLIENT_ID }}
+          client-secret: ${{ secrets.POWERPLATFORM_CLIENT_SECRET }}
+
+      - name: Detect deployment settings
+        id: settings
+        run: |
+          SETTINGS_PATH="solutions/${{ steps.source.outputs.solution-name }}/config/qa.deploymentsettings.json"
+          if [ -f "$SETTINGS_PATH" ]; then
+            echo "settings-file=$SETTINGS_PATH" >> $GITHUB_OUTPUT
+            echo "has-settings=true" >> $GITHUB_OUTPUT
+            echo "Found deployment settings: $SETTINGS_PATH"
+          else
+            echo "settings-file=" >> $GITHUB_OUTPUT
+            echo "has-settings=false" >> $GITHUB_OUTPUT
+            echo "No deployment settings file found (optional)"
+          fi
+
+      - name: Import solution
+        id: import
+        uses: ./.github/actions/import-solution
+        with:
+          solution-path: ${{ steps.locate.outputs.solution-path }}
+          solution-name: ${{ steps.source.outputs.solution-name }}
+          skip-if-same-version: true
+          max-retries: 3
+          settings-file: ${{ steps.settings.outputs.settings-file }}
+
+      - name: Deployment summary
+        run: |
+          echo "## QA Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Solution | ${{ steps.source.outputs.solution-name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | QA (\`${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}\`) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Artifact | \`${{ steps.locate.outputs.solution-path }}\` |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "| Source | CI Build #${{ github.event.workflow_run.run_number }} |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Source | Manual trigger |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ steps.import.outputs.skipped }}" = "true" ]; then
+            echo "| Status | ⏭️ Skipped (version match) |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.import.outputs.imported }}" = "true" ]; then
+            echo "| Status | ✅ Deployed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Status | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ steps.settings.outputs.has-settings }}" = "true" ]; then
+            echo "| Settings | \`${{ steps.settings.outputs.settings-file }}\` |" >> $GITHUB_STEP_SUMMARY
+          fi

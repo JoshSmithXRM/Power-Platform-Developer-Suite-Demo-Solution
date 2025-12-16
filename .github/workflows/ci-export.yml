@@ -22,7 +22,8 @@
 #   6. Commit changes to develop branch (or create PR)
 #
 # The commit to develop will trigger cd-qa.yml for automatic QA deployment.
-# Tags are created on main branch merges (releases), not on exports.
+# Release tags are created automatically by cd-prod.yml after successful
+# production deployments (not during exports).
 #
 # =============================================================================
 # GITHUB ENVIRONMENT REQUIRED

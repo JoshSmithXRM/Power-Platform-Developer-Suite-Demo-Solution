@@ -1,10 +1,11 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<SdkMessageProcessingStep Name="PPDSDemo.PluginPackage.AccountAuditLogPlugin: Update of account" SdkMessageProcessingStepId="{0565a050-6cd8-f011-8543-000d3a3b9cba}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<SdkMessageProcessingStep Name="PPDSDemo.Plugins.Plugins.ContactPostUpdatePlugin: Update of contact" SdkMessageProcessingStepId="{c937887e-77d9-f011-8543-000d3a3b9cba}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <SdkMessageId>20bebb1b-ea3e-db11-86a7-000a3a5473e8</SdkMessageId>
-  <PluginTypeExportKey>EF0D269A9BD12B5A453F8C3611E31C4CBED1AAD6E9D7A91CF5437008925F459E</PluginTypeExportKey>
-  <PrimaryEntity>account</PrimaryEntity>
+  <PluginTypeName>PPDSDemo.Plugins.Plugins.ContactPostUpdatePlugin, PPDSDemo.Plugins, Version=1.0.0.0, Culture=neutral, PublicKeyToken=87a4b0dac59374c6</PluginTypeName>
+  <PluginTypeId>969ea877-77d9-f011-8543-000d3a3b9cba</PluginTypeId>
+  <PrimaryEntity>contact</PrimaryEntity>
   <AsyncAutoDelete>0</AsyncAutoDelete>
-  <FilteringAttributes>name,telephone1,revenue</FilteringAttributes>
+  <FilteringAttributes>emailaddress1,jobtitle,telephone1</FilteringAttributes>
   <InvocationSource>1</InvocationSource>
   <Mode>1</Mode>
   <Rank>1</Rank>
@@ -16,8 +17,8 @@
   <IntroducedVersion>1.0</IntroducedVersion>
   <SdkMessageProcessingStepImages>
     <SdkMessageProcessingStepImage Name="PreImage">
-      <SdkMessageProcessingStepImageId>{0865a050-6cd8-f011-8543-000d3a3b9cba}</SdkMessageProcessingStepImageId>
-      <Attributes>name,telephone1,revenue</Attributes>
+      <SdkMessageProcessingStepImageId>{cc37887e-77d9-f011-8543-000d3a3b9cba}</SdkMessageProcessingStepImageId>
+      <Attributes>emailaddress1,jobtitle,telephone1</Attributes>
       <EntityAlias>PreImage</EntityAlias>
       <ImageType>0</ImageType>
       <MessagePropertyName>Target</MessagePropertyName>

@@ -1,16 +1,27 @@
 # =============================================================================
 # CD: Deploy to Production
 # =============================================================================
-# Deploys the managed solution to the Production environment.
+# Deploys the managed solution to the Production environment and creates a
+# release tag on successful deployment.
 #
 # Triggers:
 #   - Push to main branch (with solution changes)
 #   - Manual workflow dispatch (requires typing "DEPLOY" for safety)
 #
+# This workflow uses pre-built artifacts from ci-build.yml, ensuring:
+#   - Same artifact that passed QA goes to Production
+#   - No rebuild variance between environments
+#   - Faster deployments
+#
 # Safety measures:
 #   - GitHub Environment protection rules (required reviewers)
 #   - Manual confirmation required for workflow_dispatch
 #   - Only deploys from main branch
+#
+# Release Tagging:
+#   - Creates git tag (vX.X.YYYYMMDD.N) after successful deployment
+#   - Tag version comes from Solution.xml
+#   - Tags are only created on push events (not manual dispatches)
 #
 # =============================================================================
 # GITHUB ENVIRONMENT REQUIRED
@@ -50,6 +61,10 @@ on:
         description: 'Type "DEPLOY" to confirm production deployment'
         required: true
         default: ''
+      artifact_run_id:
+        description: 'CI Build run ID to deploy (leave empty for latest from main)'
+        required: false
+        default: ''
 
 jobs:
   # ===========================================================================
@@ -65,17 +80,226 @@ jobs:
           exit 1
 
   # ===========================================================================
-  # Deploy job - Uses reusable workflow
+  # Deploy job - Downloads artifact and imports
   # ===========================================================================
   deploy-to-prod:
     if: |
       github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.confirm_production == 'DEPLOY')
-    uses: ./.github/workflows/_deploy-solution.yml
-    with:
-      environment-name: Prod
-      solution-name: ${{ github.event.inputs.solution_name || 'PPDSDemo' }}
-      solution-folder: solutions/PPDSDemo/src
-      build-plugins: true
-      ref: main
-    secrets: inherit
+    runs-on: ubuntu-latest
+    environment: Prod
+
+    outputs:
+      deployed: ${{ steps.import.outputs.imported }}
+      skipped: ${{ steps.import.outputs.skipped }}
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Determine artifact source
+        id: source
+        run: |
+          SOLUTION_NAME="${{ github.event.inputs.solution_name || 'PPDSDemo' }}"
+          echo "solution-name=$SOLUTION_NAME" >> $GITHUB_OUTPUT
+          
+          if [ -n "${{ github.event.inputs.artifact_run_id }}" ]; then
+            RUN_ID="${{ github.event.inputs.artifact_run_id }}"
+            echo "Using artifact from specified run: $RUN_ID"
+            echo "run-id=$RUN_ID" >> $GITHUB_OUTPUT
+          else
+            echo "Will find latest CI Build artifact from main branch"
+            echo "run-id=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download artifact (specific run)
+        if: steps.source.outputs.run-id != ''
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ steps.source.outputs.solution-name }}-${{ github.event.inputs.artifact_run_id }}
+          path: ./artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.source.outputs.run-id }}
+
+      - name: Download latest artifact (from main)
+        if: steps.source.outputs.run-id == ''
+        uses: dawidd6/action-download-artifact@v11
+        with:
+          workflow: ci-build.yml
+          branch: main
+          name_is_regexp: true
+          name: ${{ steps.source.outputs.solution-name }}-.*
+          path: ./artifact
+          search_artifacts: true
+          if_no_artifact_found: fail
+
+      - name: Locate solution file
+        id: locate
+        run: |
+          SOLUTION_FILE=$(find ./artifact -name "*.zip" -type f | head -1)
+          if [ -z "$SOLUTION_FILE" ]; then
+            echo "::error::No solution .zip found in artifact"
+            exit 1
+          fi
+          echo "Found solution: $SOLUTION_FILE"
+          echo "solution-path=$SOLUTION_FILE" >> $GITHUB_OUTPUT
+
+      - name: Extract version
+        id: version
+        run: |
+          SOLUTION_XML="solutions/${{ steps.source.outputs.solution-name }}/src/Other/Solution.xml"
+          if [ -f "$SOLUTION_XML" ]; then
+            VERSION=$(grep -oP '(?<=<Version>)[^<]+' "$SOLUTION_XML" | head -1)
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Solution version: $VERSION"
+          else
+            echo "version=unknown" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup PAC CLI
+        uses: ./.github/actions/setup-pac-cli
+
+      - name: Authenticate to Prod environment
+        uses: ./.github/actions/pac-auth
+        with:
+          environment-url: ${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}
+          tenant-id: ${{ vars.POWERPLATFORM_TENANT_ID }}
+          client-id: ${{ vars.POWERPLATFORM_CLIENT_ID }}
+          client-secret: ${{ secrets.POWERPLATFORM_CLIENT_SECRET }}
+
+      - name: Detect deployment settings
+        id: settings
+        run: |
+          SETTINGS_PATH="solutions/${{ steps.source.outputs.solution-name }}/config/prod.deploymentsettings.json"
+          if [ -f "$SETTINGS_PATH" ]; then
+            echo "settings-file=$SETTINGS_PATH" >> $GITHUB_OUTPUT
+            echo "has-settings=true" >> $GITHUB_OUTPUT
+            echo "Found deployment settings: $SETTINGS_PATH"
+          else
+            echo "settings-file=" >> $GITHUB_OUTPUT
+            echo "has-settings=false" >> $GITHUB_OUTPUT
+            echo "No deployment settings file found (optional)"
+          fi
+
+      - name: Import solution
+        id: import
+        uses: ./.github/actions/import-solution
+        with:
+          solution-path: ${{ steps.locate.outputs.solution-path }}
+          solution-name: ${{ steps.source.outputs.solution-name }}
+          skip-if-same-version: true
+          max-retries: 3
+          settings-file: ${{ steps.settings.outputs.settings-file }}
+
+      - name: Deployment summary
+        run: |
+          echo "## Production Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Solution | ${{ steps.source.outputs.solution-name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ steps.version.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | Production (\`${{ vars.POWERPLATFORM_ENVIRONMENT_URL }}\`) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Artifact | \`${{ steps.locate.outputs.solution-path }}\` |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.import.outputs.skipped }}" = "true" ]; then
+            echo "| Status | ⏭️ Skipped (version match) |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.import.outputs.imported }}" = "true" ]; then
+            echo "| Status | ✅ Deployed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Status | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ===========================================================================
+  # Create Release Tag - After successful deployment
+  # ===========================================================================
+  create-release-tag:
+    name: Create Release Tag
+    runs-on: ubuntu-latest
+    needs: [deploy-to-prod]
+    if: github.event_name == 'push' && needs.deploy-to-prod.outputs.deployed == 'true'
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION="${{ needs.deploy-to-prod.outputs.version }}"
+          
+          if [ -z "$VERSION" ] || [ "$VERSION" = "unknown" ]; then
+            # Fallback: extract from Solution.xml
+            SOLUTION_XML="solutions/PPDSDemo/src/Other/Solution.xml"
+            VERSION=$(grep -oP '(?<=<Version>)[^<]+' "$SOLUTION_XML" | head -1 || echo "")
+            echo "Version from Solution.xml: $VERSION"
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not determine version"
+            exit 1
+          fi
+
+          TAG_NAME="v${VERSION}"
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        id: check-tag
+        run: |
+          TAG_NAME="${{ steps.version.outputs.tag_name }}"
+
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Tag $TAG_NAME already exists, skipping"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Tag $TAG_NAME does not exist, will create"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create and push tag
+        if: steps.check-tag.outputs.exists == 'false'
+        run: |
+          TAG_NAME="${{ steps.version.outputs.tag_name }}"
+          VERSION="${{ steps.version.outputs.version }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "$TAG_NAME" -m "Release $VERSION
+
+          Deployed to Production via CD pipeline.
+
+          Commit: ${{ github.sha }}
+          Workflow: ${{ github.run_id }}"
+
+          git push origin "$TAG_NAME"
+
+          echo "Created and pushed tag: $TAG_NAME"
+
+      - name: Tag summary
+        run: |
+          echo "## Release Tag" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.check-tag.outputs.exists }}" = "true" ]; then
+            echo "Tag \`${{ steps.version.outputs.tag_name }}\` already exists - skipped creation" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Created tag: \`${{ steps.version.outputs.tag_name }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ steps.version.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
