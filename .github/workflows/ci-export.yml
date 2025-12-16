@@ -155,10 +155,12 @@ jobs:
 
       - name: Set solution version in Dev environment
         run: |
+          set -e
           echo "Setting solution version to ${{ steps.version.outputs.new_version }} in Dev environment"
           pac solution online-version \
             --solution-name "${{ env.SOLUTION_NAME }}" \
             --solution-version "${{ steps.version.outputs.new_version }}"
+          echo "Version set successfully"
 
       - name: Export solution
         uses: ./.github/actions/export-solution
