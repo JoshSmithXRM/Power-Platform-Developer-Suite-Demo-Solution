@@ -13,6 +13,8 @@ var rootCommand = new RootCommand("PPDS.Dataverse Demo - Connection pool and dat
 rootCommand.AddCommand(WhoAmICommand.Create());
 rootCommand.AddCommand(SeedCommand.Create());
 rootCommand.AddCommand(CleanCommand.Create());
+rootCommand.AddCommand(TestMigrationCommand.Create());
+rootCommand.AddCommand(MigrationFeaturesCommand.Create());
 
 // Default behavior: show help if no command specified
 rootCommand.SetHandler(() =>
@@ -21,14 +23,18 @@ rootCommand.SetHandler(() =>
     Console.WriteLine("===================");
     Console.WriteLine();
     Console.WriteLine("Commands:");
-    Console.WriteLine("  whoami  Test connectivity with WhoAmI request");
-    Console.WriteLine("  seed    Create sample accounts and contacts");
-    Console.WriteLine("  clean   Remove sample data from Dataverse");
+    Console.WriteLine("  whoami          Test connectivity with WhoAmI request");
+    Console.WriteLine("  seed            Create sample accounts and contacts");
+    Console.WriteLine("  clean           Remove sample data from Dataverse");
+    Console.WriteLine("  test-migration  End-to-end test of ppds-migrate CLI");
+    Console.WriteLine("  demo-features   Demo new migration features (M2M, filtering, etc.)");
     Console.WriteLine();
     Console.WriteLine("Usage:");
     Console.WriteLine("  dotnet run -- whoami");
     Console.WriteLine("  dotnet run -- seed");
     Console.WriteLine("  dotnet run -- clean");
+    Console.WriteLine("  dotnet run -- test-migration");
+    Console.WriteLine("  dotnet run -- demo-features --feature all");
     Console.WriteLine();
     Console.WriteLine("Configuration:");
     Console.WriteLine("  Connection is configured via .NET User Secrets.");
