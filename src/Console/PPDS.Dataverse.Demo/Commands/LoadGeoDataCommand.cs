@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
+using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Query;
 
 namespace PPDS.Dataverse.Demo.Commands;
@@ -210,9 +211,25 @@ public static class LoadGeoDataCommand
             Console.WriteLine("│ Phase 4: Load ZIP Codes                                         │");
             Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
 
+            // Query alternate key metadata to determine which columns are in the key
+            var alternateKeyColumns = await GetAlternateKeyColumnsAsync(client, "ppds_zipcode", "ppds_zipcode_code");
+            if (alternateKeyColumns == null)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("  Warning: Alternate key 'ppds_zipcode_code' not found");
+                Console.WriteLine("  Falling back to ppds_code only");
+                Console.ResetColor();
+                alternateKeyColumns = new[] { "ppds_code" };
+            }
+            else
+            {
+                Console.WriteLine($"  Alternate key columns: {string.Join(", ", alternateKeyColumns)}");
+            }
+            Console.WriteLine();
+
             var zipStopwatch = Stopwatch.StartNew();
 
-            var (created, updated, errors, skipped) = await LoadZipCodesAsync(connectionString, zipCodes, stateMap, batchSize, maxParallel, verbose, logger);
+            var (created, updated, errors, skipped) = await LoadZipCodesAsync(connectionString, zipCodes, stateMap, alternateKeyColumns, batchSize, maxParallel, verbose, logger);
 
             zipStopwatch.Stop();
 
@@ -278,6 +295,51 @@ public static class LoadGeoDataCommand
             Console.WriteLine($"  ZIP codes skipped: {skipped:N0}");
         if (errors > 0)
             Console.WriteLine($"  ZIP codes failed: {errors:N0}");
+    }
+
+    private static async Task<string[]?> GetAlternateKeyColumnsAsync(ServiceClient client, string entityName, string keyLogicalName)
+    {
+        try
+        {
+            // EntityFilters.Entity includes the Keys collection
+            var request = new RetrieveEntityRequest
+            {
+                LogicalName = entityName,
+                EntityFilters = EntityFilters.Entity
+            };
+
+            var response = (RetrieveEntityResponse)await client.ExecuteAsync(request);
+
+            Console.WriteLine($"  Found {response.EntityMetadata.Keys.Length} alternate key(s) on {entityName}:");
+
+            foreach (var key in response.EntityMetadata.Keys)
+            {
+                var displayName = key.DisplayName?.UserLocalizedLabel?.Label ?? "(no display name)";
+                var status = key.EntityKeyIndexStatus.ToString();
+                Console.WriteLine($"    - {key.LogicalName}: [{string.Join(", ", key.KeyAttributes)}] ({status})");
+                Console.WriteLine($"      Display: {displayName}");
+
+                if (key.LogicalName == keyLogicalName)
+                {
+                    if (key.EntityKeyIndexStatus != EntityKeyIndexStatus.Active)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine($"      WARNING: Key status is {status}, not Active!");
+                        Console.ResetColor();
+                    }
+                    return key.KeyAttributes;
+                }
+            }
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"  Warning: Failed to retrieve alternate key metadata: {ex.Message}");
+            Console.ResetColor();
+            return null;
+        }
     }
 
     private static async Task<List<ZipCodeRecord>> DownloadAndParseDataAsync()
@@ -388,11 +450,20 @@ public static class LoadGeoDataCommand
         string connectionString,
         List<ZipCodeRecord> zipCodes,
         Dictionary<string, Guid> stateMap,
+        string[] alternateKeyColumns,
         int batchSize,
         int maxParallel,
         bool verbose,
         ILogger? logger)
     {
+        // Report which columns will be used for the alternate key
+        var keyIncludesState = alternateKeyColumns.Contains("ppds_stateid", StringComparer.OrdinalIgnoreCase);
+        Console.WriteLine($"  Using alternate key with {alternateKeyColumns.Length} column(s): [{string.Join(", ", alternateKeyColumns)}]");
+        if (keyIncludesState)
+        {
+            Console.WriteLine($"    Note: Key includes ppds_stateid - deduplication must be per (ZIP, State) pair");
+        }
+        Console.WriteLine();
         // Normalize and deduplicate by ZIP code (CSV may contain duplicates or whitespace)
         // Trim whitespace to ensure consistent matching with Dataverse alternate key
         var uniqueZipCodes = zipCodes
@@ -445,11 +516,21 @@ public static class LoadGeoDataCommand
             }
 
             var entity = new Entity("ppds_zipcode");
-            // Set alternate key for upsert matching
-            entity.KeyAttributes["ppds_code"] = zip.Zip;
-            // Set attributes
+            var stateRef = new EntityReference("ppds_state", stateId);
+
+            // Set ALL alternate key columns for upsert matching
+            // If key is composite (e.g., ppds_code + ppds_stateid), ALL must be in KeyAttributes
+            foreach (var keyCol in alternateKeyColumns)
+            {
+                if (keyCol.Equals("ppds_code", StringComparison.OrdinalIgnoreCase))
+                    entity.KeyAttributes["ppds_code"] = zip.Zip;
+                else if (keyCol.Equals("ppds_stateid", StringComparison.OrdinalIgnoreCase))
+                    entity.KeyAttributes["ppds_stateid"] = stateRef;
+            }
+
+            // Set all attributes (including those in key - required for create path)
             entity["ppds_code"] = zip.Zip;
-            entity["ppds_stateid"] = new EntityReference("ppds_state", stateId);
+            entity["ppds_stateid"] = stateRef;
             entity["ppds_cityname"] = zip.City;
             entity["ppds_county"] = zip.County;
             entity["ppds_latitude"] = zip.Lat;
@@ -465,10 +546,27 @@ public static class LoadGeoDataCommand
             Console.ResetColor();
         }
 
-        // Pre-flight validation: verify no duplicate keys in entity list
+        // Pre-flight validation: verify no duplicate composite keys in entity list
+        // Build composite key string from all alternate key columns
+        string GetCompositeKey(Entity e)
+        {
+            var parts = new List<string>();
+            foreach (var keyCol in alternateKeyColumns)
+            {
+                if (e.KeyAttributes.TryGetValue(keyCol, out var val))
+                {
+                    if (val is EntityReference er)
+                        parts.Add($"{keyCol}={er.Id}");
+                    else
+                        parts.Add($"{keyCol}={val}");
+                }
+            }
+            return string.Join("|", parts);
+        }
+
         var entityKeys = entities
-            .Select(e => e.KeyAttributes.TryGetValue("ppds_code", out var k) ? k?.ToString() : null)
-            .Where(k => k != null)
+            .Select(e => GetCompositeKey(e))
+            .Where(k => !string.IsNullOrEmpty(k))
             .ToList();
         var entityDuplicates = entityKeys
             .GroupBy(k => k)
@@ -478,7 +576,7 @@ public static class LoadGeoDataCommand
         if (entityDuplicates.Any())
         {
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"  ERROR: {entityDuplicates.Count} duplicate keys in entity list:");
+            Console.WriteLine($"  ERROR: {entityDuplicates.Count} duplicate composite keys in entity list:");
             foreach (var dup in entityDuplicates.Take(10))
             {
                 Console.WriteLine($"    '{dup.Key}' x{dup.Count()}");
@@ -556,10 +654,10 @@ public static class LoadGeoDataCommand
                         errorDetail = $"{ex.GetType().Name}: {ex.Message}";
                     }
 
-                    // Check for duplicate keys within this batch
+                    // Check for duplicate composite keys within this batch
                     var batchKeys = batchList
-                        .Select(e => e.KeyAttributes.TryGetValue("ppds_code", out var k) ? k?.ToString() : null)
-                        .Where(k => k != null)
+                        .Select(e => GetCompositeKey(e))
+                        .Where(k => !string.IsNullOrEmpty(k))
                         .ToList();
                     var duplicateKeys = batchKeys
                         .GroupBy(k => k)
@@ -573,7 +671,7 @@ public static class LoadGeoDataCommand
 
                         if (duplicateKeys.Any())
                         {
-                            Console.WriteLine($"    Found {duplicateKeys.Count} duplicate keys in batch:");
+                            Console.WriteLine($"    Found {duplicateKeys.Count} duplicate composite keys in batch:");
                             foreach (var dup in duplicateKeys.Take(5))
                             {
                                 Console.WriteLine($"      '{dup.Key}' x{dup.Count()}");
