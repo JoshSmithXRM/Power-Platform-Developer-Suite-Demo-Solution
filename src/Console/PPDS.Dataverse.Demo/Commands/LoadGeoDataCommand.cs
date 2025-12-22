@@ -410,21 +410,23 @@ public static class LoadGeoDataCommand
         var lastProgressUpdate = DateTime.UtcNow;
         var progressLock = new object();
 
-        // Process batches in parallel
+        // Create a SINGLE shared client - ServiceClient is thread-safe for concurrent requests
+        // DO NOT create clients inside the parallel loop (causes OAuth rate limiting)
+        using var client = new ServiceClient(connectionString);
+        if (!client.IsReady)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"  Connection failed: {client.LastError}");
+            Console.ResetColor();
+            return (0, 0, entities.Count + skippedCount);
+        }
+
+        // Process batches in parallel using the shared thread-safe client
         await Parallel.ForEachAsync(
             batches,
             new ParallelOptions { MaxDegreeOfParallelism = maxParallel },
             async (batch, ct) =>
             {
-                // Each parallel task gets its own connection
-                using var client = new ServiceClient(connectionString);
-                if (!client.IsReady)
-                {
-                    Interlocked.Add(ref totalErrors, batch.Length);
-                    Interlocked.Add(ref totalProcessed, batch.Length);
-                    return;
-                }
-
                 var batchList = batch.ToList();
                 var targets = new EntityCollection(batchList) { EntityName = "ppds_zipcode" };
                 var request = new UpsertMultipleRequest { Targets = targets };
