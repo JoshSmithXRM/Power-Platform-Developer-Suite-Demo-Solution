@@ -6,21 +6,36 @@
 // Quick Dataverse queries without a project file.
 // Edit the query section below and run: dotnet run query.cs
 //
+// Uses the same .NET User Secrets as the demo app (UserSecretsId: ppds-dataverse-demo)
+//
 // =============================================================================
 
 #:package Microsoft.PowerPlatform.Dataverse.Client@1.1.27
+#:package Microsoft.Extensions.Configuration@9.0.0
+#:package Microsoft.Extensions.Configuration.UserSecrets@9.0.0
+#:package Microsoft.Extensions.Configuration.EnvironmentVariables@9.0.0
 
+// Enable dynamic code generation (required by Dataverse SDK)
+#:property PublishAot=false
+#:property EnableTrimAnalyzer=false
+
+using Microsoft.Extensions.Configuration;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 
-var connectionString = Environment.GetEnvironmentVariable("DATAVERSE_CONNECTION")
-    ?? "YOUR_CONNECTION_STRING_HERE";
+// Load connection from User Secrets (same as demo app)
+var config = new ConfigurationBuilder()
+    .AddUserSecrets("ppds-dataverse-demo")
+    .AddEnvironmentVariables()
+    .Build();
 
-if (connectionString == "YOUR_CONNECTION_STRING_HERE")
+var connectionString = config["Dataverse:Connections:0:ConnectionString"];
+
+if (string.IsNullOrEmpty(connectionString))
 {
-    Console.WriteLine("Set DATAVERSE_CONNECTION environment variable first.");
-    Console.WriteLine("  $env:DATAVERSE_CONNECTION = \"AuthType=ClientSecret;Url=...\"");
+    Console.WriteLine("No connection configured. Run: dotnet user-secrets set ...");
+    Console.WriteLine("See CLAUDE.md for setup instructions.");
     return;
 }
 

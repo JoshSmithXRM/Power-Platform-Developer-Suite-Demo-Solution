@@ -18,6 +18,35 @@
 
 ---
 
+## 🔐 Dataverse Connection (User Secrets)
+
+The demo app uses .NET User Secrets for Dataverse credentials. **This is already configured.**
+
+| Property | Value |
+|----------|-------|
+| UserSecretsId | `ppds-dataverse-demo` |
+| Config Path | `Dataverse:Connections:0:ConnectionString` |
+
+### Check Current Connection
+
+```powershell
+dotnet user-secrets list --project src/Console/PPDS.Dataverse.Demo
+```
+
+### Set Connection (if needed)
+
+```powershell
+cd src/Console/PPDS.Dataverse.Demo
+dotnet user-secrets set "Dataverse:Connections:0:Name" "Primary"
+dotnet user-secrets set "Dataverse:Connections:0:ConnectionString" "AuthType=ClientSecret;Url=https://org.crm.dynamics.com;ClientId=...;ClientSecret=..."
+```
+
+### Usage in Code
+
+The connection is automatically loaded via `IConfiguration`. All demo commands, scratchpad scripts, and the migration CLI use this same secret.
+
+---
+
 ## 🚫 NEVER
 
 | Rule | Why |

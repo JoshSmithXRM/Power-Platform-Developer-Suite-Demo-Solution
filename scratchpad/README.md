@@ -9,13 +9,14 @@ Quick Dataverse scripts without project files. Like LinqPad, but native .NET.
 ## Usage
 
 ```powershell
-# Set connection string (one time per session)
-$env:DATAVERSE_CONNECTION = "AuthType=ClientSecret;Url=https://org.crm.dynamics.com;ClientId=...;ClientSecret=..."
-
-# Run scripts
+# Scripts automatically use the demo app's User Secrets - no setup needed!
+cd scratchpad
 dotnet run whoami.cs
 dotnet run query.cs
 ```
+
+**Connection:** Scripts read from the same User Secrets as the demo app (`ppds-dataverse-demo`).
+If you've already configured the demo app, these scripts work immediately.
 
 ## Scripts
 

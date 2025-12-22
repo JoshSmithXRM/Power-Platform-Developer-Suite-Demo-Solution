@@ -3,35 +3,48 @@
 // WhoAmI Scratchpad - .NET 10 Single-File C# Script
 // =============================================================================
 //
-// Run with:   dotnet run whoami.cs
-// Or:         dotnet whoami.cs (if .NET 10+ with file association)
+// Run with: dotnet run whoami.cs
 //
-// Set connection string via environment variable:
-//   $env:DATAVERSE_CONNECTION = "AuthType=ClientSecret;Url=https://org.crm.dynamics.com;ClientId=...;ClientSecret=..."
+// Uses the same .NET User Secrets as the demo app (UserSecretsId: ppds-dataverse-demo)
+// No additional configuration needed if you've already set up the demo app.
 //
-// Or edit the fallback below for quick testing.
+// To configure (if needed):
+//   cd src/Console/PPDS.Dataverse.Demo
+//   dotnet user-secrets set "Dataverse:Connections:0:ConnectionString" "AuthType=..."
+//
 // =============================================================================
 
 #:package Microsoft.PowerPlatform.Dataverse.Client@1.1.27
+#:package Microsoft.Extensions.Configuration@9.0.0
+#:package Microsoft.Extensions.Configuration.UserSecrets@9.0.0
+#:package Microsoft.Extensions.Configuration.EnvironmentVariables@9.0.0
+
+// Enable dynamic code generation (required by Dataverse SDK)
+#:property PublishAot=false
+#:property EnableTrimAnalyzer=false
 
 using Microsoft.Crm.Sdk.Messages;
+using Microsoft.Extensions.Configuration;
 using Microsoft.PowerPlatform.Dataverse.Client;
 
-// Get connection string from environment or use fallback
-var connectionString = Environment.GetEnvironmentVariable("DATAVERSE_CONNECTION")
-    ?? "YOUR_CONNECTION_STRING_HERE";  // Edit this for quick testing
+// Load connection from User Secrets (same as demo app)
+var config = new ConfigurationBuilder()
+    .AddUserSecrets("ppds-dataverse-demo")  // Same UserSecretsId as demo project
+    .AddEnvironmentVariables()               // Fallback to env vars
+    .Build();
 
-if (connectionString == "YOUR_CONNECTION_STRING_HERE")
+var connectionString = config["Dataverse:Connections:0:ConnectionString"];
+
+if (string.IsNullOrEmpty(connectionString))
 {
     Console.ForegroundColor = ConsoleColor.Yellow;
     Console.WriteLine("No connection string configured!");
     Console.WriteLine();
     Console.ResetColor();
-    Console.WriteLine("Options:");
-    Console.WriteLine("  1. Set environment variable:");
-    Console.WriteLine("     $env:DATAVERSE_CONNECTION = \"AuthType=ClientSecret;Url=...\"");
+    Console.WriteLine("Configure using .NET User Secrets:");
     Console.WriteLine();
-    Console.WriteLine("  2. Edit this script and replace YOUR_CONNECTION_STRING_HERE");
+    Console.WriteLine("  cd src/Console/PPDS.Dataverse.Demo");
+    Console.WriteLine("  dotnet user-secrets set \"Dataverse:Connections:0:ConnectionString\" \"AuthType=ClientSecret;Url=...\"");
     Console.WriteLine();
     return;
 }
@@ -70,5 +83,9 @@ catch (Exception ex)
 {
     Console.ForegroundColor = ConsoleColor.Red;
     Console.WriteLine($"Error: {ex.Message}");
+    if (ex.InnerException != null)
+    {
+        Console.WriteLine($"Inner: {ex.InnerException.Message}");
+    }
     Console.ResetColor();
 }
