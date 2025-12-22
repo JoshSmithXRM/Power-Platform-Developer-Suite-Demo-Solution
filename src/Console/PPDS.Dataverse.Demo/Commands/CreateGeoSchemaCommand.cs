@@ -1,0 +1,492 @@
+using System.CommandLine;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.PowerPlatform.Dataverse.Client;
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Messages;
+using Microsoft.Xrm.Sdk.Metadata;
+
+namespace PPDS.Dataverse.Demo.Commands;
+
+/// <summary>
+/// Creates geographic reference data schema (ppds_state, ppds_city, ppds_zipcode) for volume testing.
+/// </summary>
+public static class CreateGeoSchemaCommand
+{
+    private const string PublisherPrefix = "ppds";
+    private const int PublisherOptionValuePrefix = 10000; // Adjust based on your publisher
+
+    public static Command Create()
+    {
+        var command = new Command("create-geo-schema", "Create geographic reference data tables for volume testing");
+
+        var deleteFirstOption = new Option<bool>(
+            "--delete-first",
+            "Delete existing tables before creating (WARNING: destroys data)");
+
+        command.AddOption(deleteFirstOption);
+
+        command.SetHandler(async (bool deleteFirst) =>
+        {
+            Environment.ExitCode = await ExecuteAsync(deleteFirst);
+        }, deleteFirstOption);
+
+        return command;
+    }
+
+    public static async Task<int> ExecuteAsync(bool deleteFirst)
+    {
+        Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
+        Console.WriteLine("║       Create Geographic Schema for Volume Testing            ║");
+        Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+        Console.WriteLine();
+
+        using var host = CommandBase.CreateHost([]);
+        var config = host.Services.GetRequiredService<IConfiguration>();
+        var connectionString = config["Dataverse:Connections:0:ConnectionString"];
+
+        if (string.IsNullOrEmpty(connectionString))
+        {
+            CommandBase.WriteError("Connection string not found");
+            return 1;
+        }
+
+        try
+        {
+            using var client = new ServiceClient(connectionString);
+            if (!client.IsReady)
+            {
+                CommandBase.WriteError($"Connection failed: {client.LastError}");
+                return 1;
+            }
+
+            Console.WriteLine($"  Connected to: {client.ConnectedOrgFriendlyName}");
+            Console.WriteLine();
+
+            if (deleteFirst)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("  WARNING: --delete-first specified. Existing tables will be deleted!");
+                Console.ResetColor();
+                Console.WriteLine();
+
+                await DeleteTableIfExistsAsync(client, "ppds_zipcode");
+                await DeleteTableIfExistsAsync(client, "ppds_city");
+                await DeleteTableIfExistsAsync(client, "ppds_state");
+            }
+
+            // Create tables in dependency order
+            Console.WriteLine("  Creating tables...");
+            Console.WriteLine();
+
+            // 1. State (no dependencies)
+            await CreateStateTableAsync(client);
+
+            // 2. City (depends on State)
+            await CreateCityTableAsync(client);
+
+            // 3. ZipCode (depends on State, references City via N:N or lookup)
+            await CreateZipCodeTableAsync(client);
+
+            Console.WriteLine();
+            Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("║              Schema Creation Complete                         ║");
+            Console.ResetColor();
+            Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+            Console.WriteLine();
+            Console.WriteLine("  Tables created:");
+            Console.WriteLine("    - ppds_state (State/Province)");
+            Console.WriteLine("    - ppds_city (City with State lookup)");
+            Console.WriteLine("    - ppds_zipcode (ZIP Code with State lookup)");
+            Console.WriteLine();
+            Console.WriteLine("  Next steps:");
+            Console.WriteLine("    dotnet run -- load-geo-data     # Load geographic data");
+            Console.WriteLine("    dotnet run -- test-geo-volume   # Run volume tests");
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            CommandBase.WriteError($"Error: {ex.Message}");
+            if (ex.InnerException != null)
+            {
+                Console.WriteLine($"    Inner: {ex.InnerException.Message}");
+            }
+            return 1;
+        }
+    }
+
+    private static async Task DeleteTableIfExistsAsync(ServiceClient client, string logicalName)
+    {
+        try
+        {
+            Console.Write($"    Deleting {logicalName}... ");
+            var request = new DeleteEntityRequest { LogicalName = logicalName };
+            await client.ExecuteAsync(request);
+            CommandBase.WriteSuccess("Deleted");
+        }
+        catch (Exception ex) when (ex.Message.Contains("Could not find") || ex.Message.Contains("does not exist"))
+        {
+            Console.WriteLine("(not found, skipping)");
+        }
+    }
+
+    private static async Task<bool> TableExistsAsync(ServiceClient client, string logicalName)
+    {
+        try
+        {
+            var request = new RetrieveEntityRequest
+            {
+                LogicalName = logicalName,
+                EntityFilters = EntityFilters.Entity
+            };
+            await client.ExecuteAsync(request);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static async Task CreateStateTableAsync(ServiceClient client)
+    {
+        const string logicalName = "ppds_state";
+
+        Console.Write($"    Creating {logicalName}... ");
+
+        if (await TableExistsAsync(client, logicalName))
+        {
+            Console.WriteLine("(already exists)");
+            return;
+        }
+
+        var entity = new EntityMetadata
+        {
+            SchemaName = "ppds_State",
+            LogicalName = logicalName,
+            DisplayName = new Label("State", 1033),
+            DisplayCollectionName = new Label("States", 1033),
+            Description = new Label("US States and territories for geographic reference data", 1033),
+            OwnershipType = OwnershipTypes.UserOwned,
+            IsActivity = false
+        };
+
+        var primaryAttribute = new StringAttributeMetadata
+        {
+            SchemaName = "ppds_Name",
+            LogicalName = "ppds_name",
+            DisplayName = new Label("Name", 1033),
+            Description = new Label("State name (e.g., California)", 1033),
+            RequiredLevel = new AttributeRequiredLevelManagedProperty(AttributeRequiredLevel.ApplicationRequired),
+            MaxLength = 100
+        };
+
+        var request = new CreateEntityRequest
+        {
+            Entity = entity,
+            PrimaryAttribute = primaryAttribute
+        };
+
+        await client.ExecuteAsync(request);
+
+        // Add additional attributes
+        await CreateStringAttributeAsync(client, logicalName, "ppds_abbreviation", "Abbreviation",
+            "Two-letter state abbreviation (e.g., CA)", 2, AttributeRequiredLevel.ApplicationRequired);
+
+        await CreateStringAttributeAsync(client, logicalName, "ppds_fipscode", "FIPS Code",
+            "Federal Information Processing Standard code", 2, AttributeRequiredLevel.None);
+
+        await CreateIntegerAttributeAsync(client, logicalName, "ppds_population", "Population",
+            "State population", AttributeRequiredLevel.None);
+
+        // Create alternate key on abbreviation for upsert support
+        await CreateAlternateKeyAsync(client, logicalName, "ppds_ak_abbreviation", "Abbreviation",
+            ["ppds_abbreviation"]);
+
+        CommandBase.WriteSuccess("Created");
+    }
+
+    private static async Task CreateCityTableAsync(ServiceClient client)
+    {
+        const string logicalName = "ppds_city";
+
+        Console.Write($"    Creating {logicalName}... ");
+
+        if (await TableExistsAsync(client, logicalName))
+        {
+            Console.WriteLine("(already exists)");
+            return;
+        }
+
+        var entity = new EntityMetadata
+        {
+            SchemaName = "ppds_City",
+            LogicalName = logicalName,
+            DisplayName = new Label("City", 1033),
+            DisplayCollectionName = new Label("Cities", 1033),
+            Description = new Label("US Cities for geographic reference data", 1033),
+            OwnershipType = OwnershipTypes.UserOwned,
+            IsActivity = false
+        };
+
+        var primaryAttribute = new StringAttributeMetadata
+        {
+            SchemaName = "ppds_Name",
+            LogicalName = "ppds_name",
+            DisplayName = new Label("Name", 1033),
+            Description = new Label("City name", 1033),
+            RequiredLevel = new AttributeRequiredLevelManagedProperty(AttributeRequiredLevel.ApplicationRequired),
+            MaxLength = 200
+        };
+
+        var request = new CreateEntityRequest
+        {
+            Entity = entity,
+            PrimaryAttribute = primaryAttribute
+        };
+
+        await client.ExecuteAsync(request);
+
+        // Add State lookup
+        await CreateLookupAttributeAsync(client, logicalName, "ppds_stateid", "State",
+            "ppds_state", AttributeRequiredLevel.ApplicationRequired);
+
+        // Add County
+        await CreateStringAttributeAsync(client, logicalName, "ppds_county", "County",
+            "County name", 100, AttributeRequiredLevel.None);
+
+        // Add coordinates
+        await CreateDecimalAttributeAsync(client, logicalName, "ppds_latitude", "Latitude",
+            "Latitude coordinate", AttributeRequiredLevel.None);
+
+        await CreateDecimalAttributeAsync(client, logicalName, "ppds_longitude", "Longitude",
+            "Longitude coordinate", AttributeRequiredLevel.None);
+
+        // Population
+        await CreateIntegerAttributeAsync(client, logicalName, "ppds_population", "Population",
+            "City population", AttributeRequiredLevel.None);
+
+        CommandBase.WriteSuccess("Created");
+    }
+
+    private static async Task CreateZipCodeTableAsync(ServiceClient client)
+    {
+        const string logicalName = "ppds_zipcode";
+
+        Console.Write($"    Creating {logicalName}... ");
+
+        if (await TableExistsAsync(client, logicalName))
+        {
+            Console.WriteLine("(already exists)");
+            return;
+        }
+
+        var entity = new EntityMetadata
+        {
+            SchemaName = "ppds_ZipCode",
+            LogicalName = logicalName,
+            DisplayName = new Label("ZIP Code", 1033),
+            DisplayCollectionName = new Label("ZIP Codes", 1033),
+            Description = new Label("US ZIP Codes for geographic reference data and volume testing", 1033),
+            OwnershipType = OwnershipTypes.UserOwned,
+            IsActivity = false
+        };
+
+        var primaryAttribute = new StringAttributeMetadata
+        {
+            SchemaName = "ppds_Code",
+            LogicalName = "ppds_code",
+            DisplayName = new Label("ZIP Code", 1033),
+            Description = new Label("5-digit ZIP code", 1033),
+            RequiredLevel = new AttributeRequiredLevelManagedProperty(AttributeRequiredLevel.ApplicationRequired),
+            MaxLength = 10
+        };
+
+        var request = new CreateEntityRequest
+        {
+            Entity = entity,
+            PrimaryAttribute = primaryAttribute
+        };
+
+        await client.ExecuteAsync(request);
+
+        // State lookup (for denormalized queries)
+        await CreateLookupAttributeAsync(client, logicalName, "ppds_stateid", "State",
+            "ppds_state", AttributeRequiredLevel.ApplicationRequired);
+
+        // City name (denormalized for simpler queries - could also be a lookup)
+        await CreateStringAttributeAsync(client, logicalName, "ppds_cityname", "City Name",
+            "Primary city name for this ZIP code", 200, AttributeRequiredLevel.None);
+
+        // County
+        await CreateStringAttributeAsync(client, logicalName, "ppds_county", "County",
+            "County name", 100, AttributeRequiredLevel.None);
+
+        // Coordinates
+        await CreateDecimalAttributeAsync(client, logicalName, "ppds_latitude", "Latitude",
+            "Latitude coordinate", AttributeRequiredLevel.None);
+
+        await CreateDecimalAttributeAsync(client, logicalName, "ppds_longitude", "Longitude",
+            "Longitude coordinate", AttributeRequiredLevel.None);
+
+        // Population
+        await CreateIntegerAttributeAsync(client, logicalName, "ppds_population", "Population",
+            "ZIP code population", AttributeRequiredLevel.None);
+
+        // Timezone
+        await CreateStringAttributeAsync(client, logicalName, "ppds_timezone", "Timezone",
+            "Timezone identifier", 50, AttributeRequiredLevel.None);
+
+        // Create alternate key on ZIP code for upsert support
+        await CreateAlternateKeyAsync(client, logicalName, "ppds_ak_code", "ZIP Code",
+            ["ppds_code"]);
+
+        CommandBase.WriteSuccess("Created");
+    }
+
+    private static async Task CreateStringAttributeAsync(ServiceClient client, string entityLogicalName,
+        string attributeLogicalName, string displayName, string description, int maxLength,
+        AttributeRequiredLevel requiredLevel)
+    {
+        var attribute = new StringAttributeMetadata
+        {
+            SchemaName = attributeLogicalName.Replace("ppds_", "ppds_").Replace("ppds_", "ppds_" ),
+            LogicalName = attributeLogicalName,
+            DisplayName = new Label(displayName, 1033),
+            Description = new Label(description, 1033),
+            RequiredLevel = new AttributeRequiredLevelManagedProperty(requiredLevel),
+            MaxLength = maxLength
+        };
+
+        // Fix schema name casing
+        var parts = attributeLogicalName.Split('_');
+        if (parts.Length == 2)
+        {
+            attribute.SchemaName = parts[0] + "_" + char.ToUpper(parts[1][0]) + parts[1].Substring(1);
+        }
+
+        var request = new CreateAttributeRequest
+        {
+            EntityName = entityLogicalName,
+            Attribute = attribute
+        };
+
+        await client.ExecuteAsync(request);
+    }
+
+    private static async Task CreateIntegerAttributeAsync(ServiceClient client, string entityLogicalName,
+        string attributeLogicalName, string displayName, string description, AttributeRequiredLevel requiredLevel)
+    {
+        var parts = attributeLogicalName.Split('_');
+        var schemaName = parts.Length == 2
+            ? parts[0] + "_" + char.ToUpper(parts[1][0]) + parts[1].Substring(1)
+            : attributeLogicalName;
+
+        var attribute = new IntegerAttributeMetadata
+        {
+            SchemaName = schemaName,
+            LogicalName = attributeLogicalName,
+            DisplayName = new Label(displayName, 1033),
+            Description = new Label(description, 1033),
+            RequiredLevel = new AttributeRequiredLevelManagedProperty(requiredLevel),
+            MinValue = 0,
+            MaxValue = int.MaxValue
+        };
+
+        var request = new CreateAttributeRequest
+        {
+            EntityName = entityLogicalName,
+            Attribute = attribute
+        };
+
+        await client.ExecuteAsync(request);
+    }
+
+    private static async Task CreateDecimalAttributeAsync(ServiceClient client, string entityLogicalName,
+        string attributeLogicalName, string displayName, string description, AttributeRequiredLevel requiredLevel)
+    {
+        var parts = attributeLogicalName.Split('_');
+        var schemaName = parts.Length == 2
+            ? parts[0] + "_" + char.ToUpper(parts[1][0]) + parts[1].Substring(1)
+            : attributeLogicalName;
+
+        var attribute = new DecimalAttributeMetadata
+        {
+            SchemaName = schemaName,
+            LogicalName = attributeLogicalName,
+            DisplayName = new Label(displayName, 1033),
+            Description = new Label(description, 1033),
+            RequiredLevel = new AttributeRequiredLevelManagedProperty(requiredLevel),
+            Precision = 6,
+            MinValue = -180,
+            MaxValue = 180
+        };
+
+        var request = new CreateAttributeRequest
+        {
+            EntityName = entityLogicalName,
+            Attribute = attribute
+        };
+
+        await client.ExecuteAsync(request);
+    }
+
+    private static async Task CreateLookupAttributeAsync(ServiceClient client, string entityLogicalName,
+        string attributeLogicalName, string displayName, string referencedEntity, AttributeRequiredLevel requiredLevel)
+    {
+        var parts = attributeLogicalName.Split('_');
+        var schemaName = parts.Length == 2
+            ? parts[0] + "_" + char.ToUpper(parts[1][0]) + parts[1].Substring(1)
+            : attributeLogicalName;
+
+        // For lookups, we need to create a 1:N relationship
+        var request = new CreateOneToManyRequest
+        {
+            Lookup = new LookupAttributeMetadata
+            {
+                SchemaName = schemaName,
+                LogicalName = attributeLogicalName,
+                DisplayName = new Label(displayName, 1033),
+                RequiredLevel = new AttributeRequiredLevelManagedProperty(requiredLevel)
+            },
+            OneToManyRelationship = new OneToManyRelationshipMetadata
+            {
+                SchemaName = $"{PublisherPrefix}_{referencedEntity}_{entityLogicalName}",
+                ReferencedEntity = referencedEntity,
+                ReferencingEntity = entityLogicalName,
+                CascadeConfiguration = new CascadeConfiguration
+                {
+                    Assign = CascadeType.NoCascade,
+                    Delete = CascadeType.RemoveLink,
+                    Merge = CascadeType.NoCascade,
+                    Reparent = CascadeType.NoCascade,
+                    Share = CascadeType.NoCascade,
+                    Unshare = CascadeType.NoCascade
+                }
+            }
+        };
+
+        await client.ExecuteAsync(request);
+    }
+
+    private static async Task CreateAlternateKeyAsync(ServiceClient client, string entityLogicalName,
+        string keyName, string displayName, params string[] attributeLogicalNames)
+    {
+        var keyMetadata = new EntityKeyMetadata
+        {
+            SchemaName = keyName,
+            DisplayName = new Label(displayName, 1033),
+            KeyAttributes = attributeLogicalNames
+        };
+
+        var request = new CreateEntityKeyRequest
+        {
+            EntityName = entityLogicalName,
+            EntityKey = keyMetadata
+        };
+
+        await client.ExecuteAsync(request);
+    }
+}
