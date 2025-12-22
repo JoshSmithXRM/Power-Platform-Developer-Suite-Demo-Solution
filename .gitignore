@@ -440,3 +440,16 @@ solutions/**/pluginpackages/**/package/*.nupkg
 # Draw.io backup files
 *.drawio.bkp
 .$*.drawio.bkp
+
+# Migration artifacts (ppds-migrate CLI outputs)
+# Temp extraction folders (but NOT cmt-extracted/ which is reference data)
+**/migration/test-extracted/
+**/migration/*-extracted/
+!**/migration/cmt-extracted/
+
+# Generated schema files (temp outputs from schema generation)
+generated-*.xml
+
+# Verification reports (temp test outputs)
+*-report.json
+verification-report.json
