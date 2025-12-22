@@ -393,16 +393,43 @@ public static class LoadGeoDataCommand
         bool verbose,
         ILogger? logger)
     {
-        // Deduplicate by ZIP code (CSV may contain duplicates) - keep first occurrence
+        // Normalize and deduplicate by ZIP code (CSV may contain duplicates or whitespace)
+        // Trim whitespace to ensure consistent matching with Dataverse alternate key
         var uniqueZipCodes = zipCodes
-            .GroupBy(z => z.Zip)
-            .Select(g => g.First())
+            .Select(z => new { Record = z, NormalizedZip = z.Zip?.Trim() ?? "" })
+            .Where(x => !string.IsNullOrEmpty(x.NormalizedZip))
+            .GroupBy(x => x.NormalizedZip)
+            .Select(g => {
+                var first = g.First();
+                // Update the record with normalized ZIP
+                first.Record.Zip = first.NormalizedZip;
+                return first.Record;
+            })
             .ToList();
 
         var duplicateCount = zipCodes.Count - uniqueZipCodes.Count;
         if (duplicateCount > 0)
         {
-            Console.WriteLine($"  Deduplicated: {duplicateCount:N0} duplicate ZIP codes removed");
+            Console.WriteLine($"  Deduplicated: {duplicateCount:N0} duplicate/empty ZIP codes removed");
+
+            // Show sample duplicates for debugging
+            if (verbose)
+            {
+                var duplicates = zipCodes
+                    .GroupBy(z => z.Zip?.Trim() ?? "")
+                    .Where(g => g.Count() > 1)
+                    .Take(5)
+                    .ToList();
+
+                if (duplicates.Any())
+                {
+                    Console.WriteLine($"    Sample duplicates:");
+                    foreach (var dup in duplicates)
+                    {
+                        Console.WriteLine($"      '{dup.Key}' appears {dup.Count()} times");
+                    }
+                }
+            }
         }
 
         // Build all entities upfront
@@ -436,6 +463,28 @@ public static class LoadGeoDataCommand
             Console.ForegroundColor = ConsoleColor.Yellow;
             Console.WriteLine($"  Skipped {skippedCount} records (unknown state)");
             Console.ResetColor();
+        }
+
+        // Pre-flight validation: verify no duplicate keys in entity list
+        var entityKeys = entities
+            .Select(e => e.KeyAttributes.TryGetValue("ppds_code", out var k) ? k?.ToString() : null)
+            .Where(k => k != null)
+            .ToList();
+        var entityDuplicates = entityKeys
+            .GroupBy(k => k)
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+        if (entityDuplicates.Any())
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"  ERROR: {entityDuplicates.Count} duplicate keys in entity list:");
+            foreach (var dup in entityDuplicates.Take(10))
+            {
+                Console.WriteLine($"    '{dup.Key}' x{dup.Count()}");
+            }
+            Console.ResetColor();
+            return (0, 0, entities.Count, skippedCount);
         }
 
         var batches = entities.Chunk(batchSize).ToList();
@@ -507,10 +556,36 @@ public static class LoadGeoDataCommand
                         errorDetail = $"{ex.GetType().Name}: {ex.Message}";
                     }
 
+                    // Check for duplicate keys within this batch
+                    var batchKeys = batchList
+                        .Select(e => e.KeyAttributes.TryGetValue("ppds_code", out var k) ? k?.ToString() : null)
+                        .Where(k => k != null)
+                        .ToList();
+                    var duplicateKeys = batchKeys
+                        .GroupBy(k => k)
+                        .Where(g => g.Count() > 1)
+                        .ToList();
+
                     lock (progressLock)
                     {
                         Console.ForegroundColor = ConsoleColor.Red;
                         Console.WriteLine($"    Batch error: {errorDetail}");
+
+                        if (duplicateKeys.Any())
+                        {
+                            Console.WriteLine($"    Found {duplicateKeys.Count} duplicate keys in batch:");
+                            foreach (var dup in duplicateKeys.Take(5))
+                            {
+                                Console.WriteLine($"      '{dup.Key}' x{dup.Count()}");
+                            }
+                        }
+                        else if (ex.Message.Contains("same key"))
+                        {
+                            // No duplicates in batch - issue might be cross-batch duplicates
+                            // processed in parallel, or existing data in Dataverse
+                            Console.WriteLine($"    No duplicates in this batch ({batchKeys.Count} keys)");
+                            Console.WriteLine($"    First 5 keys: {string.Join(", ", batchKeys.Take(5))}");
+                        }
                         Console.ResetColor();
                     }
                     Interlocked.Add(ref totalErrors, batchList.Count);
