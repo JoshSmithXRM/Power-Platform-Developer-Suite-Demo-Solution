@@ -212,7 +212,7 @@ public static class LoadGeoDataCommand
 
             var zipStopwatch = Stopwatch.StartNew();
 
-            var (created, updated, errors) = await LoadZipCodesAsync(connectionString, zipCodes, stateMap, batchSize, maxParallel, verbose, logger);
+            var (created, updated, errors, skipped) = await LoadZipCodesAsync(connectionString, zipCodes, stateMap, batchSize, maxParallel, verbose, logger);
 
             zipStopwatch.Stop();
 
@@ -220,9 +220,15 @@ public static class LoadGeoDataCommand
             Console.WriteLine($"  ZIP code loading completed in {zipStopwatch.Elapsed.TotalSeconds:F2}s");
             Console.WriteLine($"    Created: {created:N0}");
             Console.WriteLine($"    Updated: {updated:N0}");
-            if (errors > 0)
+            if (skipped > 0)
             {
                 Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"    Skipped: {skipped:N0} (unknown state)");
+                Console.ResetColor();
+            }
+            if (errors > 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine($"    Errors: {errors:N0}");
                 Console.ResetColor();
             }
@@ -231,7 +237,7 @@ public static class LoadGeoDataCommand
             Console.WriteLine($"    Throughput: {throughput:F1} records/second");
             Console.WriteLine();
 
-            PrintSummary(totalStopwatch, states.Count, created, updated, errors);
+            PrintSummary(totalStopwatch, states.Count, created, updated, errors, skipped);
 
             return errors > 0 ? 1 : 0;
         }
@@ -246,7 +252,7 @@ public static class LoadGeoDataCommand
         }
     }
 
-    private static void PrintSummary(Stopwatch totalStopwatch, int states, int created, int updated, int errors)
+    private static void PrintSummary(Stopwatch totalStopwatch, int states, int created, int updated, int errors, int skipped = 0)
     {
         totalStopwatch.Stop();
 
@@ -258,7 +264,7 @@ public static class LoadGeoDataCommand
         }
         else
         {
-            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine("║              Data Load Complete (with errors)                 ║");
         }
         Console.ResetColor();
@@ -268,6 +274,10 @@ public static class LoadGeoDataCommand
         Console.WriteLine($"  States: {states}");
         Console.WriteLine($"  ZIP codes created: {created:N0}");
         Console.WriteLine($"  ZIP codes updated: {updated:N0}");
+        if (skipped > 0)
+            Console.WriteLine($"  ZIP codes skipped: {skipped:N0}");
+        if (errors > 0)
+            Console.WriteLine($"  ZIP codes failed: {errors:N0}");
     }
 
     private static async Task<List<ZipCodeRecord>> DownloadAndParseDataAsync()
@@ -352,46 +362,29 @@ public static class LoadGeoDataCommand
 
         Console.Write($"  Creating {missing.Count} states... ");
 
-        var requests = missing.Select(s => new CreateRequest
+        // Build entities for CreateMultiple
+        var stateEntities = missing.Select(s => new Entity("ppds_state")
         {
-            Target = new Entity("ppds_state")
-            {
-                ["ppds_name"] = s.Name,
-                ["ppds_abbreviation"] = s.Abbreviation,
-                ["ppds_population"] = s.Population
-            }
+            ["ppds_name"] = s.Name,
+            ["ppds_abbreviation"] = s.Abbreviation,
+            ["ppds_population"] = s.Population
         }).ToList();
 
-        // States are few enough to do in one batch
-        var executeMultiple = new ExecuteMultipleRequest
-        {
-            Requests = new OrganizationRequestCollection(),
-            Settings = new ExecuteMultipleSettings
-            {
-                ContinueOnError = true,
-                ReturnResponses = true
-            }
-        };
-        executeMultiple.Requests.AddRange(requests);
+        var targets = new EntityCollection(stateEntities) { EntityName = "ppds_state" };
+        var response = (CreateMultipleResponse)await client.ExecuteAsync(
+            new CreateMultipleRequest { Targets = targets });
 
-        var response = (ExecuteMultipleResponse)await client.ExecuteAsync(executeMultiple);
-
-        var created = 0;
-        for (int i = 0; i < response.Responses.Count; i++)
+        // Map created IDs back to abbreviations
+        for (int i = 0; i < response.Ids.Length; i++)
         {
-            var itemResponse = response.Responses[i];
-            if (itemResponse.Fault == null && itemResponse.Response is CreateResponse createResponse)
-            {
-                stateMap[missing[i].Abbreviation] = createResponse.id;
-                created++;
-            }
+            stateMap[missing[i].Abbreviation] = response.Ids[i];
         }
 
-        Console.WriteLine($"created {created}");
+        Console.WriteLine($"created {response.Ids.Length}");
         return stateMap;
     }
 
-    private static async Task<(int created, int updated, int errors)> LoadZipCodesAsync(
+    private static async Task<(int created, int updated, int errors, int skipped)> LoadZipCodesAsync(
         string connectionString,
         List<ZipCodeRecord> zipCodes,
         Dictionary<string, Guid> stateMap,
@@ -455,7 +448,7 @@ public static class LoadGeoDataCommand
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine($"  Connection failed: {client.LastError}");
             Console.ResetColor();
-            return (0, 0, entities.Count + skippedCount);
+            return (0, 0, entities.Count, skippedCount);
         }
 
         // Process batches in parallel using the shared thread-safe client
@@ -472,19 +465,40 @@ public static class LoadGeoDataCommand
                 {
                     var response = (UpsertMultipleResponse)await client.ExecuteAsync(request, ct);
 
-                    // UpsertMultiple doesn't return per-record created/updated status
-                    // All records in batch succeeded
-                    var batchSuccess = batchList.Count;
-                    Interlocked.Add(ref totalCreated, batchSuccess);
-                    Interlocked.Add(ref totalProcessed, batchSuccess);
+                    // UpsertMultipleResponse.Results contains UpsertResponse objects with RecordCreated flag
+                    int created = 0, updated = 0;
+                    foreach (var result in response.Results)
+                    {
+                        if (result is UpsertResponse upsertResult)
+                        {
+                            if (upsertResult.RecordCreated)
+                                created++;
+                            else
+                                updated++;
+                        }
+                    }
+
+                    Interlocked.Add(ref totalCreated, created);
+                    Interlocked.Add(ref totalUpdated, updated);
+                    Interlocked.Add(ref totalProcessed, batchList.Count);
                 }
                 catch (Exception ex)
                 {
-                    // Batch failed - log and count as errors
+                    // Extract detailed error info from Dataverse FaultException
+                    string errorDetail;
+                    if (ex is System.ServiceModel.FaultException<OrganizationServiceFault> fault)
+                    {
+                        errorDetail = $"[0x{fault.Detail.ErrorCode:X8}] {fault.Detail.Message}";
+                    }
+                    else
+                    {
+                        errorDetail = $"{ex.GetType().Name}: {ex.Message}";
+                    }
+
                     lock (progressLock)
                     {
                         Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine($"    Batch error: {ex.Message}");
+                        Console.WriteLine($"    Batch error: {errorDetail}");
                         Console.ResetColor();
                     }
                     Interlocked.Add(ref totalErrors, batchList.Count);
@@ -526,7 +540,7 @@ public static class LoadGeoDataCommand
                           $"| {finalRate:F0}/s overall " +
                           $"| {finalElapsed:mm\\:ss} elapsed");
 
-        return (totalCreated, totalUpdated, totalErrors + skippedCount);
+        return (totalCreated, totalUpdated, totalErrors, skippedCount);
     }
 
     // CSV record class matching GitHub free_zipcode_data format
