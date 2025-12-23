@@ -90,6 +90,118 @@ The pool is designed for **load-balancing within a single org** (multiple App Us
 
 ---
 
+## 🔌 Connection Pool Patterns (PPDS.Dataverse)
+
+### Always dispose pooled clients
+
+```csharp
+// ✅ Correct - automatic return to pool
+await using var client = await _pool.GetClientAsync();
+await client.CreateAsync(entity);
+
+// ❌ Wrong - connection leak (blocks pool)
+var client = await _pool.GetClientAsync();
+await client.CreateAsync(entity);
+// forgot to dispose - connection never returned
+```
+
+### Never store pooled clients in fields
+
+```csharp
+// ❌ Wrong - storing client leads to stale connections
+public class MyService
+{
+    private IPooledClient _client; // DON'T DO THIS
+}
+
+// ✅ Correct - get per operation, dispose immediately
+public async Task DoWorkAsync()
+{
+    await using var client = await _pool.GetClientAsync();
+    await client.CreateAsync(entity);
+}
+```
+
+### Use server-recommended parallelism
+
+```csharp
+// ✅ Correct - query dynamically
+await using var client = await _pool.GetClientAsync();
+int dop = client.RecommendedDegreesOfParallelism;
+
+// ❌ Wrong - hardcoded value
+var options = new ParallelOptions { MaxDegreeOfParallelism = 10 }; // DON'T HARDCODE
+```
+
+---
+
+## 📦 Bulk Operations Patterns (PPDS.Dataverse)
+
+### When to use bulk APIs
+
+| Records | API | Throughput |
+|---------|-----|------------|
+| <10 | Single requests | ~50K/hr |
+| 10+ | `CreateMultiple`/`UpdateMultiple`/`UpsertMultiple` | ~10M/hr |
+
+### UpsertMultiple alternate key pitfall
+
+```csharp
+// ✅ Correct - key in KeyAttributes ONLY
+entity.KeyAttributes["ppds_code"] = "12345";
+entity["ppds_name"] = "Value";
+
+// ❌ Wrong - causes "item with same key already added" error
+entity.KeyAttributes["ppds_code"] = "12345";
+entity["ppds_code"] = "12345";  // DO NOT set key in Attributes too
+```
+
+### Handle BulkOperationResult errors
+
+```csharp
+var result = await _bulk.UpsertMultipleAsync("ppds_entity", entities);
+
+// Errors are returned, not thrown
+if (!result.IsSuccess)
+{
+    foreach (var error in result.Errors)
+    {
+        _logger.LogError("Record {Index}: [{Code}] {Message}",
+            error.Index, error.ErrorCode, error.Message);
+    }
+}
+
+// Available properties: SuccessCount, FailureCount, Duration, CreatedIds (create only)
+```
+
+---
+
+## 🔧 Plugin Registration (PPDS.Plugins)
+
+### PluginStepAttribute
+
+```csharp
+[PluginStep(
+    Message = "Create",                    // Required: Create, Update, Delete, etc.
+    EntityLogicalName = "account",         // Required: logical name
+    Stage = PluginStage.PreOperation,      // 10=PreValidation, 20=PreOperation, 40=PostOperation
+    Mode = PluginMode.Synchronous,         // Synchronous (default) or Asynchronous
+    FilteringAttributes = "name,phone")]   // Optional: comma-separated (Update only)
+public class AccountCreatePlugin : PluginBase { }
+```
+
+### PluginImageAttribute
+
+```csharp
+[PluginImage(
+    ImageType = PluginImageType.PreImage,  // PreImage, PostImage, or Both
+    Name = "PreImage",                     // Access via context.PreEntityImages["PreImage"]
+    Attributes = "name,telephone1")]       // Comma-separated columns to capture
+public class AccountUpdatePlugin : PluginBase { }
+```
+
+---
+
 ## 🚫 NEVER
 
 | Rule | Why |
@@ -105,6 +217,11 @@ The pool is designed for **load-balancing within a single org** (multiple App Us
 | PR directly to main | Always target `develop` first |
 | Squash merge develop→main | Use regular merge to preserve feature commits |
 | Sync plugins in Pre-Create | Entity doesn't exist yet; use Post-Create |
+| Create `ServiceClient` per request | 42,000x slower than pool; use `IDataverseConnectionPool` |
+| Store `IPooledClient` in fields | Get per operation; dispose immediately with `await using` |
+| Hardcode parallelism values | Query `RecommendedDegreesOfParallelism` dynamically |
+| Set alternate key in both `KeyAttributes` AND `Attributes` | Causes "duplicate key" error on upsert |
+| Put multiple orgs in `Dataverse:Connections` | Pool load-balances randomly; use `Environments:*` instead |
 
 > **Cross-Repo Changes:** If a fix requires changes to `sdk/`, `tools/`, `extension/`, or `alm/`,
 > describe the proposed change and get approval first. Do NOT edit files in other repositories.
@@ -123,6 +240,11 @@ The pool is designed for **load-balancing within a single org** (multiple App Us
 | Early-bound entities for type safety | Compile-time checking prevents runtime errors |
 | Deployment settings per environment | Environment-specific connection refs and variables |
 | Conventional commits | `feat:`, `fix:`, `chore:` for clear history |
+| Dispose pooled clients with `await using` | Returns connection to pool; prevents leaks |
+| Use bulk APIs for 10+ records | 200x throughput vs single requests |
+| Check `BulkOperationResult.IsSuccess` | Errors are returned in result, not thrown |
+| Inherit plugins from `PluginBase` | Standardized error handling and tracing |
+| Use `PluginStepAttribute` for registration | Declarative; tooling reads metadata from assembly |
 
 ---
 
