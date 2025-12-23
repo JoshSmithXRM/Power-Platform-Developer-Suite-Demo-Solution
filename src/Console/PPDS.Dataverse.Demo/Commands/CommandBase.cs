@@ -31,8 +31,9 @@ public abstract class CommandBase
     /// </summary>
     /// <param name="connectionString">The Dataverse connection string.</param>
     /// <param name="name">Display name for the connection.</param>
+    /// <param name="parallelism">Optional max parallel batches. If null, uses SDK default.</param>
     /// <param name="verbose">Enable debug-level logging for PPDS.Dataverse namespace.</param>
-    public static IHost CreateHostForEnvironment(string connectionString, string name, bool verbose = false)
+    public static IHost CreateHostForEnvironment(string connectionString, string name, int? parallelism = null, bool verbose = false)
     {
         return Host.CreateDefaultBuilder([])
             .ConfigureLogging(logging =>
@@ -54,6 +55,10 @@ public abstract class CommandBase
                 {
                     options.Connections.Add(new DataverseConnection(name, connectionString));
                     options.Pool.DisableAffinityCookie = true;
+                    if (parallelism.HasValue)
+                    {
+                        options.BulkOperations.MaxParallelBatches = parallelism.Value;
+                    }
                 });
             })
             .Build();

@@ -30,18 +30,23 @@ public static class CleanGeoDataCommand
             "--confirm",
             "Skip confirmation prompt");
 
+        var parallelismOption = new Option<int?>(
+            "--parallelism",
+            "Max parallel batches (uses SDK default if not specified)");
+
         var verboseOption = new Option<bool>(
             ["--verbose", "-v"],
             "Enable verbose logging (shows SDK debug output)");
 
         command.AddOption(zipOnlyOption);
         command.AddOption(confirmOption);
+        command.AddOption(parallelismOption);
         command.AddOption(verboseOption);
 
-        command.SetHandler(async (bool zipOnly, bool confirm, bool verbose) =>
+        command.SetHandler(async (bool zipOnly, bool confirm, int? parallelism, bool verbose) =>
         {
-            Environment.ExitCode = await ExecuteAsync(zipOnly, confirm, verbose);
-        }, zipOnlyOption, confirmOption, verboseOption);
+            Environment.ExitCode = await ExecuteAsync(zipOnly, confirm, parallelism, verbose);
+        }, zipOnlyOption, confirmOption, parallelismOption, verboseOption);
 
         return command;
     }
@@ -49,12 +54,25 @@ public static class CleanGeoDataCommand
     // Default batch size for delete operations (parallelism uses SDK default)
     private const int DefaultBatchSize = 100;
 
-    public static async Task<int> ExecuteAsync(bool zipOnly, bool confirm, bool verbose)
+    public static async Task<int> ExecuteAsync(bool zipOnly, bool confirm, int? parallelism = null, bool verbose = false)
     {
         Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
         Console.WriteLine("║       Clean Geographic Data                                  ║");
         Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
         Console.WriteLine();
+
+        if (parallelism.HasValue)
+        {
+            Console.WriteLine($"  Parallelism: {parallelism.Value}");
+        }
+        if (verbose)
+        {
+            Console.WriteLine("  Verbose logging enabled");
+        }
+        if (parallelism.HasValue || verbose)
+        {
+            Console.WriteLine();
+        }
 
         // Configure verbose logging if requested
         ILoggerFactory? loggerFactory = null;
@@ -151,7 +169,7 @@ public static class CleanGeoDataCommand
                 Console.WriteLine("│ Deleting ZIP Codes                                              │");
                 Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
 
-                var (deleted, errors) = await BulkDeleteEntityAsync(client, "ppds_zipcode", DefaultBatchSize);
+                var (deleted, errors) = await BulkDeleteEntityAsync(client, "ppds_zipcode", DefaultBatchSize, parallelism);
                 totalDeleted += deleted;
                 totalErrors += errors;
                 Console.WriteLine($"  Deleted {deleted:N0} ZIP codes" + (errors > 0 ? $" ({errors:N0} errors)" : ""));
@@ -167,7 +185,7 @@ public static class CleanGeoDataCommand
                     Console.WriteLine("│ Deleting Cities                                                 │");
                     Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
 
-                    var (deleted, errors) = await BulkDeleteEntityAsync(client, "ppds_city", DefaultBatchSize);
+                    var (deleted, errors) = await BulkDeleteEntityAsync(client, "ppds_city", DefaultBatchSize, parallelism);
                     totalDeleted += deleted;
                     totalErrors += errors;
                     Console.WriteLine($"  Deleted {deleted:N0} cities" + (errors > 0 ? $" ({errors:N0} errors)" : ""));
@@ -181,7 +199,7 @@ public static class CleanGeoDataCommand
                     Console.WriteLine("│ Deleting States                                                 │");
                     Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
 
-                    var (deleted, errors) = await BulkDeleteEntityAsync(client, "ppds_state", DefaultBatchSize);
+                    var (deleted, errors) = await BulkDeleteEntityAsync(client, "ppds_state", DefaultBatchSize, parallelism);
                     totalDeleted += deleted;
                     totalErrors += errors;
                     Console.WriteLine($"  Deleted {deleted:N0} states" + (errors > 0 ? $" ({errors:N0} errors)" : ""));
@@ -246,7 +264,8 @@ public static class CleanGeoDataCommand
     private static async Task<(int deleted, int errors)> BulkDeleteEntityAsync(
         ServiceClient client,
         string entityName,
-        int batchSize)
+        int batchSize,
+        int? parallelism)
     {
         var totalDeleted = 0;
         var totalErrors = 0;
@@ -281,8 +300,13 @@ public static class CleanGeoDataCommand
             var waveDeleted = 0;
             var waveErrors = 0;
 
+            var parallelOptions = parallelism.HasValue
+                ? new ParallelOptions { MaxDegreeOfParallelism = parallelism.Value }
+                : new ParallelOptions();
+
             await Parallel.ForEachAsync(
                 batches,
+                parallelOptions,
                 async (batch, ct) =>
                 {
                     var batchList = batch.ToArray();
