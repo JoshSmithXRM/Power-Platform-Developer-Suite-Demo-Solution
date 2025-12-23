@@ -79,9 +79,6 @@ public static class CleanGeoDataCommand
         ILogger? logger = null;
         if (verbose)
         {
-            Console.WriteLine("  Verbose logging enabled");
-            Console.WriteLine();
-
             loggerFactory = LoggerFactory.Create(builder =>
             {
                 builder
