@@ -262,138 +262,104 @@ public static class CleanGeoDataCommand
         int batchSize,
         int maxParallel)
     {
-        var stopwatch = Stopwatch.StartNew();
-
-        // Query all record IDs
-        var allIds = new List<Guid>();
-        var query = new QueryExpression(entityName)
-        {
-            ColumnSet = new ColumnSet(false), // Just IDs
-            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
-        };
-
-        Console.Write("  Querying records... ");
-        while (true)
-        {
-            var result = await client.RetrieveMultipleAsync(query);
-            allIds.AddRange(result.Entities.Select(e => e.Id));
-
-            if (!result.MoreRecords)
-                break;
-
-            query.PageInfo.PageNumber++;
-            query.PageInfo.PagingCookie = result.PagingCookie;
-        }
-        Console.WriteLine($"found {allIds.Count:N0}");
-
-        if (allIds.Count == 0)
-            return (0, 0);
-
-        // Prepare batches
-        var batches = allIds.Chunk(batchSize).ToList();
-        Console.WriteLine($"  Deleting in {batches.Count:N0} batches ({maxParallel} parallel)...");
-
-        // Thread-safe counters and progress tracking
         var totalDeleted = 0;
         var totalErrors = 0;
-        var totalProcessed = 0;
         var overallStopwatch = Stopwatch.StartNew();
         var lastProgressUpdate = DateTime.UtcNow;
         var progressLock = new object();
 
-        // Process batches in parallel using the shared thread-safe client
-        await Parallel.ForEachAsync(
-            batches,
-            new ParallelOptions { MaxDegreeOfParallelism = maxParallel },
-            async (batch, ct) =>
+        // Delete in waves: query batch, delete, repeat until empty
+        // This approach avoids paging cookie issues and is more memory efficient
+        var waveNumber = 0;
+        while (true)
+        {
+            waveNumber++;
+
+            // Query next batch of IDs (always page 1 since we're deleting as we go)
+            var query = new QueryExpression(entityName)
             {
-                var batchList = batch.ToArray();
+                ColumnSet = new ColumnSet(false),
+                PageInfo = new PagingInfo { Count = batchSize * maxParallel, PageNumber = 1 }
+            };
 
-                // Use ExecuteMultipleRequest with DeleteRequest for standard tables
-                // (DeleteMultipleRequest only exists for elastic tables)
-                var executeMultiple = new ExecuteMultipleRequest
+            var result = await client.RetrieveMultipleAsync(query);
+            var ids = result.Entities.Select(e => e.Id).ToList();
+
+            if (ids.Count == 0)
+                break;
+
+            Console.WriteLine($"  Wave {waveNumber}: processing {ids.Count:N0} records...");
+
+            // Process batches in parallel
+            var batches = ids.Chunk(batchSize).ToList();
+            var waveDeleted = 0;
+            var waveErrors = 0;
+
+            await Parallel.ForEachAsync(
+                batches,
+                new ParallelOptions { MaxDegreeOfParallelism = maxParallel },
+                async (batch, ct) =>
                 {
-                    Requests = new OrganizationRequestCollection(),
-                    Settings = new ExecuteMultipleSettings
-                    {
-                        ContinueOnError = true,
-                        ReturnResponses = false // Faster - don't need responses for delete
-                    }
-                };
+                    var batchList = batch.ToArray();
 
-                foreach (var id in batchList)
-                {
-                    executeMultiple.Requests.Add(new DeleteRequest
+                    var executeMultiple = new ExecuteMultipleRequest
                     {
-                        Target = new EntityReference(entityName, id)
-                    });
-                }
+                        Requests = new OrganizationRequestCollection(),
+                        Settings = new ExecuteMultipleSettings
+                        {
+                            ContinueOnError = true,
+                            ReturnResponses = false
+                        }
+                    };
 
-                try
-                {
-                    await client.ExecuteAsync(executeMultiple, ct);
-
-                    Interlocked.Add(ref totalDeleted, batchList.Length);
-                    Interlocked.Add(ref totalProcessed, batchList.Length);
-                }
-                catch (Exception ex)
-                {
-                    // Extract detailed error info from Dataverse FaultException
-                    string errorDetail;
-                    if (ex is System.ServiceModel.FaultException<OrganizationServiceFault> fault)
+                    foreach (var id in batchList)
                     {
-                        errorDetail = $"[0x{fault.Detail.ErrorCode:X8}] {fault.Detail.Message}";
-                    }
-                    else
-                    {
-                        errorDetail = $"{ex.GetType().Name}: {ex.Message}";
-                    }
-
-                    lock (progressLock)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine($"    Batch error: {errorDetail}");
-                        Console.ResetColor();
+                        executeMultiple.Requests.Add(new DeleteRequest
+                        {
+                            Target = new EntityReference(entityName, id)
+                        });
                     }
 
-                    Interlocked.Add(ref totalErrors, batchList.Length);
-                    Interlocked.Add(ref totalProcessed, batchList.Length);
-                }
-
-                // Progress update (rate-limited to avoid console spam)
-                var now = DateTime.UtcNow;
-                bool shouldUpdate;
-                lock (progressLock)
-                {
-                    shouldUpdate = (now - lastProgressUpdate).TotalSeconds >= 3;
-                    if (shouldUpdate) lastProgressUpdate = now;
-                }
-
-                if (shouldUpdate)
-                {
-                    var processed = Interlocked.CompareExchange(ref totalProcessed, 0, 0);
-                    var elapsed = overallStopwatch.Elapsed;
-                    var pct = (double)processed / allIds.Count * 100;
-                    var rate = elapsed.TotalSeconds > 0.1 ? processed / elapsed.TotalSeconds : 0;
-                    var remaining = rate > 0.001 ? (allIds.Count - processed) / rate : 0;
-                    var etaDisplay = remaining > 0 ? TimeSpan.FromSeconds(remaining).ToString(@"mm\:ss") : "--:--";
-
-                    lock (progressLock)
+                    try
                     {
-                        Console.WriteLine($"    Progress: {processed:N0}/{allIds.Count:N0} ({pct:F1}%) " +
-                                          $"| {rate:F0}/s " +
-                                          $"| Elapsed: {elapsed:mm\\:ss} " +
-                                          $"| ETA: {etaDisplay}");
+                        await client.ExecuteAsync(executeMultiple, ct);
+                        Interlocked.Add(ref waveDeleted, batchList.Length);
                     }
-                }
-            });
+                    catch (Exception ex)
+                    {
+                        string errorDetail = ex is System.ServiceModel.FaultException<OrganizationServiceFault> fault
+                            ? $"[0x{fault.Detail.ErrorCode:X8}] {fault.Detail.Message}"
+                            : $"{ex.GetType().Name}: {ex.Message}";
 
-        // Final progress
+                        lock (progressLock)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine($"    Batch error: {errorDetail}");
+                            Console.ResetColor();
+                        }
+
+                        Interlocked.Add(ref waveErrors, batchList.Length);
+                    }
+                });
+
+            totalDeleted += waveDeleted;
+            totalErrors += waveErrors;
+
+            // Progress update
+            var now = DateTime.UtcNow;
+            if ((now - lastProgressUpdate).TotalSeconds >= 3)
+            {
+                lastProgressUpdate = now;
+                var elapsed = overallStopwatch.Elapsed;
+                var rate = elapsed.TotalSeconds > 0.1 ? totalDeleted / elapsed.TotalSeconds : 0;
+                Console.WriteLine($"    Total: {totalDeleted:N0} deleted | {rate:F0}/s | {elapsed:mm\\:ss} elapsed");
+            }
+        }
+
+        // Final summary
         var finalElapsed = overallStopwatch.Elapsed;
-        var finalRate = finalElapsed.TotalSeconds > 0.1 ? totalProcessed / finalElapsed.TotalSeconds : 0;
-        Console.WriteLine($"    Final: {totalProcessed:N0}/{allIds.Count:N0} " +
-                          $"| {finalRate:F0}/s overall " +
-                          $"| {finalElapsed:mm\\:ss} elapsed");
+        var finalRate = finalElapsed.TotalSeconds > 0.1 ? totalDeleted / finalElapsed.TotalSeconds : 0;
+        Console.WriteLine($"    Final: {totalDeleted:N0} deleted | {finalRate:F0}/s | {finalElapsed:mm\\:ss} elapsed");
 
         return (totalDeleted, totalErrors);
     }

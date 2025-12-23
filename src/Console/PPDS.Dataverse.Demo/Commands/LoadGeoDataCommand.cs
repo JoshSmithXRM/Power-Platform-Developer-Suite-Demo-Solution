@@ -39,7 +39,7 @@ public static class LoadGeoDataCommand
 
         var batchSizeOption = new Option<int>(
             "--batch-size",
-            () => 100,
+            () => 1000,
             "Batch size for ExecuteMultiple requests (1-1000)");
 
         var skipDownloadOption = new Option<bool>(
