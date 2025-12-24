@@ -167,6 +167,7 @@ public static class ImportGeoDataCommand
                         zipOnly: false,
                         confirm: true,
                         parallelism: null,
+                        ratePreset: null, // Uses Conservative default for deletes
                         verbose: verbose,
                         environment: environment);
 

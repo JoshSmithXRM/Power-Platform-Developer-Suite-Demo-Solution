@@ -329,6 +329,7 @@ public static class MigrateGeoDataCommand
                     zipOnly: false,
                     confirm: true,
                     parallelism: parallelism,
+                    ratePreset: null, // Uses Conservative default for deletes
                     verbose: verbose,
                     environment: target);
 

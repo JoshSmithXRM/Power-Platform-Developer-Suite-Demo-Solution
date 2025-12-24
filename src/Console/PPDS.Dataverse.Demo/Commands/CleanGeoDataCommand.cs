@@ -5,6 +5,7 @@ using Microsoft.Xrm.Sdk.Query;
 using PPDS.Dataverse.BulkOperations;
 using PPDS.Dataverse.Pooling;
 using PPDS.Dataverse.Progress;
+using PPDS.Dataverse.Resilience;
 
 namespace PPDS.Dataverse.Demo.Commands;
 
@@ -13,6 +14,8 @@ namespace PPDS.Dataverse.Demo.Commands;
 /// Deletes in dependency order: ZIP codes → cities → states.
 /// Uses IBulkOperationExecutor.DeleteMultipleAsync for optimal throughput with
 /// connection pooling, throttle-aware routing, and progress reporting.
+///
+/// Defaults to Conservative rate preset for safe delete operations.
 /// </summary>
 public static class CleanGeoDataCommand
 {
@@ -32,6 +35,10 @@ public static class CleanGeoDataCommand
             "--parallelism",
             "Max parallel batches (uses SDK default if not specified)");
 
+        var ratePresetOption = new Option<string?>(
+            "--rate-preset",
+            "Adaptive rate preset: Balanced, Conservative, Aggressive (default: Conservative for deletes)");
+
         var verboseOption = new Option<bool>(
             ["--verbose", "-v"],
             "Enable verbose logging (shows SDK debug output)");
@@ -43,26 +50,44 @@ public static class CleanGeoDataCommand
         command.AddOption(zipOnlyOption);
         command.AddOption(confirmOption);
         command.AddOption(parallelismOption);
+        command.AddOption(ratePresetOption);
         command.AddOption(verboseOption);
         command.AddOption(envOption);
 
-        command.SetHandler(async (bool zipOnly, bool confirm, int? parallelism, bool verbose, string? environment) =>
+        command.SetHandler(async (bool zipOnly, bool confirm, int? parallelism, string? ratePreset, bool verbose, string? environment) =>
         {
-            Environment.ExitCode = await ExecuteAsync(zipOnly, confirm, parallelism, verbose, environment);
-        }, zipOnlyOption, confirmOption, parallelismOption, verboseOption, envOption);
+            Environment.ExitCode = await ExecuteAsync(zipOnly, confirm, parallelism, ratePreset, verbose, environment);
+        }, zipOnlyOption, confirmOption, parallelismOption, ratePresetOption, verboseOption, envOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(bool zipOnly, bool confirm, int? parallelism = null, bool verbose = false, string? environment = null)
+    public static async Task<int> ExecuteAsync(
+        bool zipOnly,
+        bool confirm,
+        int? parallelism = null,
+        string? ratePreset = null,
+        bool verbose = false,
+        string? environment = null)
     {
         Console.WriteLine("+==============================================================+");
         Console.WriteLine("|       Clean Geographic Data                                  |");
         Console.WriteLine("+==============================================================+");
         Console.WriteLine();
 
+        // Parse rate preset - default to Conservative for delete operations (safer)
+        RateControlPreset effectivePreset = RateControlPreset.Conservative;
+        if (!string.IsNullOrEmpty(ratePreset))
+        {
+            if (!Enum.TryParse<RateControlPreset>(ratePreset, ignoreCase: true, out effectivePreset))
+            {
+                CommandBase.WriteError($"Invalid rate preset: {ratePreset}. Valid values: Balanced, Conservative, Aggressive");
+                return 1;
+            }
+        }
+
         // Create host with SDK services for bulk operations
-        using var host = CommandBase.CreateHostForBulkOperations(environment, parallelism, verbose);
+        using var host = CommandBase.CreateHostForBulkOperations(environment, parallelism, verbose, effectivePreset);
         var pool = host.Services.GetRequiredService<IDataverseConnectionPool>();
         var bulkExecutor = host.Services.GetRequiredService<IBulkOperationExecutor>();
 
@@ -74,6 +99,7 @@ public static class CleanGeoDataCommand
 
         var envDisplay = CommandBase.ResolveEnvironment(host, environment);
         Console.WriteLine($"  Environment: {envDisplay}");
+        Console.WriteLine($"  Rate Preset: {effectivePreset}");
 
         if (parallelism.HasValue)
         {

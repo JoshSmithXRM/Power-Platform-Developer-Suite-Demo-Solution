@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using PPDS.Dataverse.DependencyInjection;
 using PPDS.Dataverse.Pooling;
+using PPDS.Dataverse.Resilience;
 
 namespace PPDS.Dataverse.Demo.Commands;
 
@@ -38,7 +39,12 @@ public abstract class CommandBase
     /// <param name="environment">Environment name. If null, uses DefaultEnvironment from config.</param>
     /// <param name="parallelism">Max parallel batches. If null, uses SDK default.</param>
     /// <param name="verbose">Enable debug-level logging for PPDS.Dataverse namespace.</param>
-    public static IHost CreateHostForBulkOperations(string? environment = null, int? parallelism = null, bool verbose = false)
+    /// <param name="ratePreset">Adaptive rate control preset. If null, uses config default.</param>
+    public static IHost CreateHostForBulkOperations(
+        string? environment = null,
+        int? parallelism = null,
+        bool verbose = false,
+        RateControlPreset? ratePreset = null)
     {
         return Host.CreateDefaultBuilder()
             .ConfigureLogging(logging =>
@@ -63,6 +69,10 @@ public abstract class CommandBase
                     if (parallelism.HasValue)
                     {
                         options.BulkOperations.MaxParallelBatches = parallelism.Value;
+                    }
+                    if (ratePreset.HasValue)
+                    {
+                        options.AdaptiveRate.Preset = ratePreset.Value;
                     }
                 });
             })
