@@ -2,7 +2,6 @@ using System.CommandLine;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Xml.Linq;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
@@ -31,18 +30,23 @@ public static class TestMigrationCommand
 
         var skipSeedOption = new Option<bool>("--skip-seed", "Skip seeding (use existing data)");
         var skipCleanOption = new Option<bool>("--skip-clean", "Skip cleaning after export");
+        var envOption = new Option<string?>(
+            aliases: ["--environment", "--env", "-e"],
+            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
+
         command.AddOption(skipSeedOption);
         command.AddOption(skipCleanOption);
+        command.AddOption(envOption);
 
-        command.SetHandler(async (bool skipSeed, bool skipClean) =>
+        command.SetHandler(async (bool skipSeed, bool skipClean, string? environment) =>
         {
-            Environment.ExitCode = await ExecuteAsync(skipSeed, skipClean);
-        }, skipSeedOption, skipCleanOption);
+            Environment.ExitCode = await ExecuteAsync(skipSeed, skipClean, environment);
+        }, skipSeedOption, skipCleanOption, envOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(bool skipSeed, bool skipClean)
+    public static async Task<int> ExecuteAsync(bool skipSeed, bool skipClean, string? environment = null)
     {
         Console.WriteLine("╔══════════════════════════════════════════════════════════╗");
         Console.WriteLine("║         ppds-migrate End-to-End Test                     ║");
@@ -57,20 +61,16 @@ public static class TestMigrationCommand
             return 1;
         }
 
-        using var host = CommandBase.CreateHost();
+        using var host = CommandBase.CreateHost(environment);
         var pool = CommandBase.GetConnectionPool(host);
         if (pool == null) return 1;
 
         var bulkExecutor = host.Services.GetRequiredService<IBulkOperationExecutor>();
+        var envName = environment ?? "Dev"; // For CLI --env parameter
 
-        // Get connection string for CLI
-        var config = host.Services.GetRequiredService<IConfiguration>();
-        var (connectionString, envName) = CommandBase.BuildConnectionString(config, "Dev");
-        if (string.IsNullOrEmpty(connectionString))
-        {
-            CommandBase.WriteError("Dev environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
-            return 1;
-        }
+        var envDisplay = environment ?? "(default)";
+        Console.WriteLine($"  Environment: {envDisplay}");
+        Console.WriteLine();
 
         try
         {
@@ -124,7 +124,7 @@ public static class TestMigrationCommand
             // Generate schema
             Console.Write("  Generating schema... ");
             var schemaResult = await RunCliAsync(
-                $"schema generate -e account,contact -o \"{SchemaPath}\" --connection \"{connectionString}\"");
+                $"schema generate -e account,contact -o \"{SchemaPath}\" --env {envName}");
             if (schemaResult != 0)
             {
                 CommandBase.WriteError("Schema generation failed");
@@ -135,7 +135,7 @@ public static class TestMigrationCommand
             // Export data
             Console.Write("  Exporting data... ");
             var exportResult = await RunCliAsync(
-                $"export --schema \"{SchemaPath}\" --output \"{DataPath}\" --connection \"{connectionString}\"");
+                $"export --schema \"{SchemaPath}\" --output \"{DataPath}\" --env {envName}");
             if (exportResult != 0)
             {
                 CommandBase.WriteError("Export failed");
@@ -186,7 +186,7 @@ public static class TestMigrationCommand
 
             Console.Write("  Importing data... ");
             var importResult = await RunCliAsync(
-                $"import --data \"{DataPath}\" --mode Upsert --connection \"{connectionString}\"");
+                $"import --data \"{DataPath}\" --mode Upsert --env {envName}");
             if (importResult != 0)
             {
                 CommandBase.WriteError("Import failed");

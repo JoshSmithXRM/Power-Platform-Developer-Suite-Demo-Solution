@@ -1,9 +1,7 @@
 using System.CommandLine;
 using System.Xml.Linq;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk.Query;
+using PPDS.Dataverse.Pooling;
 
 namespace PPDS.Dataverse.Demo.Commands;
 
@@ -46,19 +44,20 @@ public static class GenerateUserMappingCommand
         Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
         Console.WriteLine();
 
-        using var host = CommandBase.CreateHost();
-        var config = host.Services.GetRequiredService<IConfiguration>();
+        // Create pools for both environments
+        using var devHost = CommandBase.CreateHost("Dev");
+        using var qaHost = CommandBase.CreateHost("QA");
 
-        var (devConnectionString, devName) = CommandBase.BuildConnectionString(config, "Dev");
-        var (qaConnectionString, qaName) = CommandBase.BuildConnectionString(config, "QA");
+        var devPool = CommandBase.GetConnectionPool(devHost);
+        var qaPool = CommandBase.GetConnectionPool(qaHost);
 
-        if (string.IsNullOrEmpty(devConnectionString))
+        if (devPool == null)
         {
             CommandBase.WriteError("Dev environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
         }
 
-        if (string.IsNullOrEmpty(qaConnectionString))
+        if (qaPool == null)
         {
             CommandBase.WriteError("QA environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
@@ -68,17 +67,11 @@ public static class GenerateUserMappingCommand
         {
             // Connect to both environments
             Console.WriteLine("  Connecting to environments...");
-            using var devClient = new ServiceClient(devConnectionString);
-            using var qaClient = new ServiceClient(qaConnectionString);
+            await using var devClient = await devPool.GetClientAsync();
+            await using var qaClient = await qaPool.GetClientAsync();
 
-            if (!devClient.IsReady || !qaClient.IsReady)
-            {
-                CommandBase.WriteError($"Connection failed: Dev={devClient.IsReady}, QA={qaClient.IsReady}");
-                return 1;
-            }
-
-            Console.WriteLine($"    {devName}: Connected");
-            Console.WriteLine($"    {qaName}: Connected");
+            Console.WriteLine("    Dev: Connected");
+            Console.WriteLine("    QA: Connected");
             Console.WriteLine();
 
             // Query users from both environments
@@ -86,8 +79,8 @@ public static class GenerateUserMappingCommand
             var devUsers = await QueryUsersAsync(devClient);
             var qaUsers = await QueryUsersAsync(qaClient);
 
-            Console.WriteLine($"    {devName}: {devUsers.Count} users");
-            Console.WriteLine($"    {qaName}: {qaUsers.Count} users");
+            Console.WriteLine($"    Dev: {devUsers.Count} users");
+            Console.WriteLine($"    QA: {qaUsers.Count} users");
             Console.WriteLine();
 
             // Build lookup by AAD Object ID
@@ -203,7 +196,7 @@ public static class GenerateUserMappingCommand
         }
     }
 
-    private static async Task<List<UserInfo>> QueryUsersAsync(ServiceClient client)
+    private static async Task<List<UserInfo>> QueryUsersAsync(IPooledClient client)
     {
         var query = new QueryExpression("systemuser")
         {

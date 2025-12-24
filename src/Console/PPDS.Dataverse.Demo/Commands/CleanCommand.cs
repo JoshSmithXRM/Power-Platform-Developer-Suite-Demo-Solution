@@ -1,10 +1,8 @@
 using System.CommandLine;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using PPDS.Dataverse.Demo.Models;
+using PPDS.Dataverse.Pooling;
 
 namespace PPDS.Dataverse.Demo.Commands;
 
@@ -22,7 +20,7 @@ public static class CleanCommand
 
         var envOption = new Option<string?>(
             aliases: ["--environment", "--env", "-e"],
-            description: "Target environment name (e.g., 'Dev', 'QA'). Defaults to Dev.");
+            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
 
         var command = new Command("clean", "Remove sample accounts and contacts from Dataverse")
         {
@@ -44,19 +42,14 @@ public static class CleanCommand
         Console.WriteLine("====================");
         Console.WriteLine();
 
-        var targetEnv = environment ?? "Dev";
-        using var host = CommandBase.CreateHost(targetEnv);
-        var config = host.Services.GetRequiredService<IConfiguration>();
+        using var host = CommandBase.CreateHost(environment);
+        var pool = CommandBase.GetConnectionPool(host);
 
-        // Build connection string for the target environment
-        var (connectionString, envName) = CommandBase.BuildConnectionString(config, targetEnv);
-        if (string.IsNullOrEmpty(connectionString))
-        {
-            CommandBase.WriteError($"Environment '{targetEnv}' not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
+        if (pool == null)
             return 1;
-        }
 
-        Console.WriteLine($"  Target: {envName}");
+        var envDisplay = environment ?? "(default)";
+        Console.WriteLine($"  Environment: {envDisplay}");
         Console.WriteLine();
 
         var contactIds = SampleData.GetContactIds();
@@ -69,7 +62,7 @@ public static class CleanCommand
 
         if (!force)
         {
-            Console.Write($"Delete these records from {envName}? (y/N): ");
+            Console.Write($"Delete these records from {envDisplay}? (y/N): ");
             var response = Console.ReadLine()?.Trim().ToLowerInvariant();
             if (response != "y" && response != "yes")
             {
@@ -81,12 +74,7 @@ public static class CleanCommand
 
         try
         {
-            using var client = new ServiceClient(connectionString);
-            if (!client.IsReady)
-            {
-                CommandBase.WriteError($"Failed to connect: {client.LastError}");
-                return 1;
-            }
+            await using var client = await pool.GetClientAsync();
 
             // Delete contacts first (they reference accounts)
             Console.Write("Deleting contacts... ");
@@ -101,7 +89,7 @@ public static class CleanCommand
             Console.WriteLine();
 
             var totalDeleted = contactSuccess + accountSuccess;
-            CommandBase.WriteSuccess($"Cleanup complete. {totalDeleted} records deleted from {envName}.");
+            CommandBase.WriteSuccess($"Cleanup complete. {totalDeleted} records deleted.");
             Console.WriteLine();
 
             return 0;
@@ -115,7 +103,7 @@ public static class CleanCommand
     }
 
     private static async Task<(int success, int failure)> DeleteMultipleAsync(
-        ServiceClient client,
+        IPooledClient client,
         string entityName,
         List<Guid> ids)
     {

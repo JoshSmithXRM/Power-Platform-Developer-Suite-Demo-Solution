@@ -2,8 +2,6 @@ using System.CommandLine;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Xml.Linq;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace PPDS.Dataverse.Demo.Commands;
 
@@ -42,18 +40,23 @@ public static class MigrationFeaturesCommand
             "--verbose",
             description: "Show detailed command output");
 
+        var envOption = new Option<string?>(
+            aliases: ["--environment", "--env", "-e"],
+            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
+
         command.AddOption(featureOption);
         command.AddOption(verboseOption);
+        command.AddOption(envOption);
 
-        command.SetHandler(async (string feature, bool verbose) =>
+        command.SetHandler(async (string feature, bool verbose, string? environment) =>
         {
-            Environment.ExitCode = await ExecuteAsync(feature, verbose);
-        }, featureOption, verboseOption);
+            Environment.ExitCode = await ExecuteAsync(feature, verbose, environment);
+        }, featureOption, verboseOption, envOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(string feature, bool verbose)
+    public static async Task<int> ExecuteAsync(string feature, bool verbose, string? environment = null)
     {
         Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
         Console.WriteLine("║          ppds-migrate Feature Demonstration                  ║");
@@ -68,15 +71,14 @@ public static class MigrationFeaturesCommand
             return 1;
         }
 
-        using var host = CommandBase.CreateHost();
-        var config = host.Services.GetRequiredService<IConfiguration>();
-        var (connectionString, envName) = CommandBase.BuildConnectionString(config, "Dev");
+        using var host = CommandBase.CreateHost(environment);
+        var pool = CommandBase.GetConnectionPool(host);
+        if (pool == null) return 1;
 
-        if (string.IsNullOrEmpty(connectionString))
-        {
-            CommandBase.WriteError("Dev environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
-            return 1;
-        }
+        var envName = environment ?? "Dev"; // For CLI --env parameter
+        var envDisplay = environment ?? "(default)";
+        Console.WriteLine($"  Environment: {envDisplay}");
+        Console.WriteLine();
 
         try
         {
@@ -84,12 +86,12 @@ public static class MigrationFeaturesCommand
 
             if (features == "all" || features == "m2m")
             {
-                await DemoM2MRelationships(connectionString, verbose);
+                await DemoM2MRelationships(envName, verbose);
             }
 
             if (features == "all" || features == "filtering")
             {
-                await DemoAttributeFiltering(connectionString, verbose);
+                await DemoAttributeFiltering(envName, verbose);
             }
 
             if (features == "all" || features == "user-mapping")
@@ -122,7 +124,7 @@ public static class MigrationFeaturesCommand
         }
     }
 
-    private static async Task DemoM2MRelationships(string connectionString, bool verbose)
+    private static async Task DemoM2MRelationships(string envName, bool verbose)
     {
         Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
         Console.WriteLine("│  Feature 1: Many-to-Many (M2M) Relationship Support            │");
@@ -150,7 +152,7 @@ public static class MigrationFeaturesCommand
         Console.Write("  Exporting with M2M relationships... ");
 
         var exportResult = await RunCliAsync(
-            $"export --schema \"{SchemaPath}\" --output \"{OutputPath}\" --connection \"{connectionString}\"",
+            $"export --schema \"{SchemaPath}\" --output \"{OutputPath}\" --env {envName}",
             verbose);
 
         if (exportResult == 0)
@@ -191,10 +193,10 @@ public static class MigrationFeaturesCommand
         Console.WriteLine();
     }
 
-    private static Task DemoAttributeFiltering(string connectionString, bool verbose)
+    private static Task DemoAttributeFiltering(string envName, bool verbose)
     {
         // Parameters kept for consistent signature, but not used since this is info-only
-        _ = connectionString;
+        _ = envName;
         _ = verbose;
 
         Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");

@@ -52,26 +52,34 @@ public static class LoadGeoDataCommand
             ["--verbose", "-v"],
             "Enable verbose logging (shows SDK debug output)");
 
+        var envOption = new Option<string?>(
+            aliases: ["--environment", "--env", "-e"],
+            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
+
         command.AddOption(limitOption);
         command.AddOption(skipDownloadOption);
         command.AddOption(statesOnlyOption);
         command.AddOption(parallelismOption);
         command.AddOption(verboseOption);
+        command.AddOption(envOption);
 
-        command.SetHandler(async (int? limit, bool skipDownload, bool statesOnly, int? parallelism, bool verbose) =>
+        command.SetHandler(async (int? limit, bool skipDownload, bool statesOnly, int? parallelism, bool verbose, string? environment) =>
         {
-            Environment.ExitCode = await ExecuteAsync(limit, skipDownload, statesOnly, parallelism, verbose);
-        }, limitOption, skipDownloadOption, statesOnlyOption, parallelismOption, verboseOption);
+            Environment.ExitCode = await ExecuteAsync(limit, skipDownload, statesOnly, parallelism, verbose, environment);
+        }, limitOption, skipDownloadOption, statesOnlyOption, parallelismOption, verboseOption, envOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(int? limit, bool skipDownload, bool statesOnly, int? parallelism = null, bool verbose = false)
+    public static async Task<int> ExecuteAsync(int? limit, bool skipDownload, bool statesOnly, int? parallelism = null, bool verbose = false, string? environment = null)
     {
         Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
         Console.WriteLine("║       Load Geographic Data for Volume Testing                ║");
         Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
         Console.WriteLine();
+
+        var envDisplay = environment ?? "(default)";
+        Console.WriteLine($"  Environment: {envDisplay}");
 
         if (parallelism.HasValue)
         {
@@ -81,13 +89,10 @@ public static class LoadGeoDataCommand
         {
             Console.WriteLine("  Verbose logging enabled");
         }
-        if (parallelism.HasValue || verbose)
-        {
-            Console.WriteLine();
-        }
+        Console.WriteLine();
 
         // Create host with SDK services for bulk operations
-        using var host = CommandBase.CreateHostForBulkOperations(environment: null, parallelism, verbose);
+        using var host = CommandBase.CreateHostForBulkOperations(environment, parallelism, verbose);
         var pool = host.Services.GetRequiredService<IDataverseConnectionPool>();
         var bulkExecutor = host.Services.GetRequiredService<IBulkOperationExecutor>();
 

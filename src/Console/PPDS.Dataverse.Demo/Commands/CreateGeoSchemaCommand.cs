@@ -1,10 +1,8 @@
 using System.CommandLine;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Metadata;
+using PPDS.Dataverse.Pooling;
 
 namespace PPDS.Dataverse.Demo.Commands;
 
@@ -14,54 +12,51 @@ namespace PPDS.Dataverse.Demo.Commands;
 public static class CreateGeoSchemaCommand
 {
     private const string PublisherPrefix = "ppds";
-    private const int PublisherOptionValuePrefix = 10000; // Adjust based on your publisher
 
     public static Command Create()
     {
-        var command = new Command("create-geo-schema", "Create geographic reference data tables for volume testing");
-
         var deleteFirstOption = new Option<bool>(
             "--delete-first",
             "Delete existing tables before creating (WARNING: destroys data)");
 
-        command.AddOption(deleteFirstOption);
+        var envOption = new Option<string?>(
+            aliases: ["--environment", "--env", "-e"],
+            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
 
-        command.SetHandler(async (bool deleteFirst) =>
+        var command = new Command("create-geo-schema", "Create geographic reference data tables for volume testing")
         {
-            Environment.ExitCode = await ExecuteAsync(deleteFirst);
-        }, deleteFirstOption);
+            deleteFirstOption,
+            envOption
+        };
+
+        command.SetHandler(async (bool deleteFirst, string? environment) =>
+        {
+            Environment.ExitCode = await ExecuteAsync(deleteFirst, environment);
+        }, deleteFirstOption, envOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(bool deleteFirst)
+    public static async Task<int> ExecuteAsync(bool deleteFirst, string? environment = null)
     {
         Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
         Console.WriteLine("║       Create Geographic Schema for Volume Testing            ║");
         Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
         Console.WriteLine();
 
-        using var host = CommandBase.CreateHost();
-        var config = host.Services.GetRequiredService<IConfiguration>();
-        var (connectionString, envName) = CommandBase.BuildConnectionString(config, "Dev");
+        using var host = CommandBase.CreateHost(environment);
+        var pool = CommandBase.GetConnectionPool(host);
 
-        if (string.IsNullOrEmpty(connectionString))
-        {
-            CommandBase.WriteError("Dev environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
+        if (pool == null)
             return 1;
-        }
+
+        var envDisplay = environment ?? "(default)";
+        Console.WriteLine($"  Environment: {envDisplay}");
+        Console.WriteLine();
 
         try
         {
-            using var client = new ServiceClient(connectionString);
-            if (!client.IsReady)
-            {
-                CommandBase.WriteError($"Connection failed: {client.LastError}");
-                return 1;
-            }
-
-            Console.WriteLine($"  Connected to: {client.ConnectedOrgFriendlyName}");
-            Console.WriteLine();
+            await using var client = await pool.GetClientAsync();
 
             if (deleteFirst)
             {
@@ -102,7 +97,7 @@ public static class CreateGeoSchemaCommand
             Console.WriteLine();
             Console.WriteLine("  Next steps:");
             Console.WriteLine("    dotnet run -- load-geo-data     # Load geographic data");
-            Console.WriteLine("    dotnet run -- test-geo-volume   # Run volume tests");
+            Console.WriteLine("    dotnet run -- clean-geo-data    # Clean up data");
 
             return 0;
         }
@@ -117,7 +112,7 @@ public static class CreateGeoSchemaCommand
         }
     }
 
-    private static async Task DeleteTableIfExistsAsync(ServiceClient client, string logicalName)
+    private static async Task DeleteTableIfExistsAsync(IPooledClient client, string logicalName)
     {
         try
         {
@@ -132,7 +127,7 @@ public static class CreateGeoSchemaCommand
         }
     }
 
-    private static async Task<bool> TableExistsAsync(ServiceClient client, string logicalName)
+    private static async Task<bool> TableExistsAsync(IPooledClient client, string logicalName)
     {
         try
         {
@@ -150,7 +145,7 @@ public static class CreateGeoSchemaCommand
         }
     }
 
-    private static async Task CreateStateTableAsync(ServiceClient client)
+    private static async Task CreateStateTableAsync(IPooledClient client)
     {
         const string logicalName = "ppds_state";
 
@@ -208,7 +203,7 @@ public static class CreateGeoSchemaCommand
         CommandBase.WriteSuccess("Created");
     }
 
-    private static async Task CreateCityTableAsync(ServiceClient client)
+    private static async Task CreateCityTableAsync(IPooledClient client)
     {
         const string logicalName = "ppds_city";
 
@@ -271,7 +266,7 @@ public static class CreateGeoSchemaCommand
         CommandBase.WriteSuccess("Created");
     }
 
-    private static async Task CreateZipCodeTableAsync(ServiceClient client)
+    private static async Task CreateZipCodeTableAsync(IPooledClient client)
     {
         const string logicalName = "ppds_zipcode";
 
@@ -346,26 +341,24 @@ public static class CreateGeoSchemaCommand
         CommandBase.WriteSuccess("Created");
     }
 
-    private static async Task CreateStringAttributeAsync(ServiceClient client, string entityLogicalName,
+    private static async Task CreateStringAttributeAsync(IPooledClient client, string entityLogicalName,
         string attributeLogicalName, string displayName, string description, int maxLength,
         AttributeRequiredLevel requiredLevel)
     {
+        var parts = attributeLogicalName.Split('_');
+        var schemaName = parts.Length == 2
+            ? parts[0] + "_" + char.ToUpper(parts[1][0]) + parts[1].Substring(1)
+            : attributeLogicalName;
+
         var attribute = new StringAttributeMetadata
         {
-            SchemaName = attributeLogicalName.Replace("ppds_", "ppds_").Replace("ppds_", "ppds_" ),
+            SchemaName = schemaName,
             LogicalName = attributeLogicalName,
             DisplayName = new Label(displayName, 1033),
             Description = new Label(description, 1033),
             RequiredLevel = new AttributeRequiredLevelManagedProperty(requiredLevel),
             MaxLength = maxLength
         };
-
-        // Fix schema name casing
-        var parts = attributeLogicalName.Split('_');
-        if (parts.Length == 2)
-        {
-            attribute.SchemaName = parts[0] + "_" + char.ToUpper(parts[1][0]) + parts[1].Substring(1);
-        }
 
         var request = new CreateAttributeRequest
         {
@@ -376,7 +369,7 @@ public static class CreateGeoSchemaCommand
         await client.ExecuteAsync(request);
     }
 
-    private static async Task CreateIntegerAttributeAsync(ServiceClient client, string entityLogicalName,
+    private static async Task CreateIntegerAttributeAsync(IPooledClient client, string entityLogicalName,
         string attributeLogicalName, string displayName, string description, AttributeRequiredLevel requiredLevel)
     {
         var parts = attributeLogicalName.Split('_');
@@ -404,7 +397,7 @@ public static class CreateGeoSchemaCommand
         await client.ExecuteAsync(request);
     }
 
-    private static async Task CreateDecimalAttributeAsync(ServiceClient client, string entityLogicalName,
+    private static async Task CreateDecimalAttributeAsync(IPooledClient client, string entityLogicalName,
         string attributeLogicalName, string displayName, string description, AttributeRequiredLevel requiredLevel)
     {
         var parts = attributeLogicalName.Split('_');
@@ -433,7 +426,7 @@ public static class CreateGeoSchemaCommand
         await client.ExecuteAsync(request);
     }
 
-    private static async Task CreateLookupAttributeAsync(ServiceClient client, string entityLogicalName,
+    private static async Task CreateLookupAttributeAsync(IPooledClient client, string entityLogicalName,
         string attributeLogicalName, string displayName, string referencedEntity, AttributeRequiredLevel requiredLevel)
     {
         var parts = attributeLogicalName.Split('_');
@@ -471,7 +464,7 @@ public static class CreateGeoSchemaCommand
         await client.ExecuteAsync(request);
     }
 
-    private static async Task CreateAlternateKeyAsync(ServiceClient client, string entityLogicalName,
+    private static async Task CreateAlternateKeyAsync(IPooledClient client, string entityLogicalName,
         string keyName, string displayName, params string[] attributeLogicalNames)
     {
         var keyMetadata = new EntityKeyMetadata

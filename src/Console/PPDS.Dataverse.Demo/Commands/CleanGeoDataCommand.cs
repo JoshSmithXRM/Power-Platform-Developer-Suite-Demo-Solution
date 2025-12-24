@@ -36,25 +36,33 @@ public static class CleanGeoDataCommand
             ["--verbose", "-v"],
             "Enable verbose logging (shows SDK debug output)");
 
+        var envOption = new Option<string?>(
+            aliases: ["--environment", "--env", "-e"],
+            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
+
         command.AddOption(zipOnlyOption);
         command.AddOption(confirmOption);
         command.AddOption(parallelismOption);
         command.AddOption(verboseOption);
+        command.AddOption(envOption);
 
-        command.SetHandler(async (bool zipOnly, bool confirm, int? parallelism, bool verbose) =>
+        command.SetHandler(async (bool zipOnly, bool confirm, int? parallelism, bool verbose, string? environment) =>
         {
-            Environment.ExitCode = await ExecuteAsync(zipOnly, confirm, parallelism, verbose);
-        }, zipOnlyOption, confirmOption, parallelismOption, verboseOption);
+            Environment.ExitCode = await ExecuteAsync(zipOnly, confirm, parallelism, verbose, environment);
+        }, zipOnlyOption, confirmOption, parallelismOption, verboseOption, envOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(bool zipOnly, bool confirm, int? parallelism = null, bool verbose = false)
+    public static async Task<int> ExecuteAsync(bool zipOnly, bool confirm, int? parallelism = null, bool verbose = false, string? environment = null)
     {
         Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
         Console.WriteLine("║       Clean Geographic Data                                  ║");
         Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
         Console.WriteLine();
+
+        var envDisplay = environment ?? "(default)";
+        Console.WriteLine($"  Environment: {envDisplay}");
 
         if (parallelism.HasValue)
         {
@@ -64,13 +72,10 @@ public static class CleanGeoDataCommand
         {
             Console.WriteLine("  Verbose logging enabled");
         }
-        if (parallelism.HasValue || verbose)
-        {
-            Console.WriteLine();
-        }
+        Console.WriteLine();
 
         // Create host with SDK services for bulk operations
-        using var host = CommandBase.CreateHostForBulkOperations(environment: null, parallelism, verbose);
+        using var host = CommandBase.CreateHostForBulkOperations(environment, parallelism, verbose);
         var pool = host.Services.GetRequiredService<IDataverseConnectionPool>();
         var bulkExecutor = host.Services.GetRequiredService<IBulkOperationExecutor>();
 

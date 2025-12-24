@@ -8,17 +8,23 @@ using PPDS.Dataverse.Pooling;
 namespace PPDS.Dataverse.Demo.Commands;
 
 /// <summary>
-/// Base class for commands that need Dataverse connectivity.
+/// Base class for commands providing Dataverse connectivity via connection pool.
+///
+/// Configuration is read from appsettings.json with environment variable overrides:
+/// - Dataverse:DefaultEnvironment - which environment to use when --env not specified
+/// - Dataverse:Environments:{Name}:Url - environment URL
+/// - Dataverse:Environments:{Name}:Connections:N:ClientId - app registration
+/// - Dataverse:Environments:{Name}:Connections:N:ClientSecret - secret (or env var name)
 /// </summary>
 public abstract class CommandBase
 {
     /// <summary>
-    /// Creates and configures the host with Dataverse connection pool for a specific environment.
+    /// Creates a host with Dataverse connection pool configured.
     /// </summary>
-    /// <param name="environment">Environment name (e.g., "Dev", "QA"). Uses DefaultEnvironment if not specified.</param>
+    /// <param name="environment">Environment name (e.g., "Dev", "QA"). If null, uses DefaultEnvironment from config.</param>
     public static IHost CreateHost(string? environment = null)
     {
-        return Host.CreateDefaultBuilder([])
+        return Host.CreateDefaultBuilder()
             .ConfigureServices((context, services) =>
             {
                 services.AddDataverseConnectionPool(context.Configuration, environment: environment);
@@ -27,14 +33,14 @@ public abstract class CommandBase
     }
 
     /// <summary>
-    /// Creates a host configured for bulk operations for a specific environment.
+    /// Creates a host configured for bulk operations with optional parallelism and verbose logging.
     /// </summary>
-    /// <param name="environment">Environment name (e.g., "Dev", "QA"). Uses DefaultEnvironment if not specified.</param>
-    /// <param name="parallelism">Optional max parallel batches. If null, uses SDK default.</param>
+    /// <param name="environment">Environment name. If null, uses DefaultEnvironment from config.</param>
+    /// <param name="parallelism">Max parallel batches. If null, uses SDK default.</param>
     /// <param name="verbose">Enable debug-level logging for PPDS.Dataverse namespace.</param>
     public static IHost CreateHostForBulkOperations(string? environment = null, int? parallelism = null, bool verbose = false)
     {
-        return Host.CreateDefaultBuilder([])
+        return Host.CreateDefaultBuilder()
             .ConfigureLogging(logging =>
             {
                 if (verbose)
@@ -51,7 +57,6 @@ public abstract class CommandBase
             {
                 services.AddDataverseConnectionPool(context.Configuration, environment: environment);
 
-                // Apply overrides
                 services.Configure<DataverseOptions>(options =>
                 {
                     options.Pool.DisableAffinityCookie = true;
@@ -66,6 +71,7 @@ public abstract class CommandBase
 
     /// <summary>
     /// Validates the connection pool is enabled and returns it.
+    /// Prints setup instructions if not configured.
     /// </summary>
     public static IDataverseConnectionPool? GetConnectionPool(IHost host)
     {
@@ -73,10 +79,8 @@ public abstract class CommandBase
 
         if (!pool.IsEnabled)
         {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("Error: Connection pool is not enabled.");
+            WriteError("Connection pool is not enabled.");
             Console.WriteLine();
-            Console.ResetColor();
             Console.WriteLine("Configure using .NET User Secrets:");
             Console.WriteLine();
             Console.ForegroundColor = ConsoleColor.DarkGray;
@@ -92,6 +96,22 @@ public abstract class CommandBase
         }
 
         return pool;
+    }
+
+    /// <summary>
+    /// Gets the default environment name from configuration.
+    /// </summary>
+    public static string GetDefaultEnvironment(IConfiguration config)
+    {
+        return config["Dataverse:DefaultEnvironment"] ?? "Dev";
+    }
+
+    /// <summary>
+    /// Gets the environment URL from configuration.
+    /// </summary>
+    public static string? GetEnvironmentUrl(IConfiguration config, string environment)
+    {
+        return config[$"Dataverse:Environments:{environment}:Url"];
     }
 
     /// <summary>
@@ -122,44 +142,5 @@ public abstract class CommandBase
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.WriteLine(message);
         Console.ResetColor();
-    }
-
-    /// <summary>
-    /// Builds a connection string from environment configuration.
-    /// Used by commands that need to pass connection strings to external tools (e.g., CLI).
-    /// </summary>
-    /// <param name="config">The configuration instance.</param>
-    /// <param name="environment">Environment name (e.g., "Dev", "QA").</param>
-    /// <returns>Tuple of (connectionString, displayName). ConnectionString is null if config is incomplete.</returns>
-    public static (string? ConnectionString, string DisplayName) BuildConnectionString(
-        IConfiguration config,
-        string environment)
-    {
-        var envSection = config.GetSection($"Dataverse:Environments:{environment}");
-        if (!envSection.Exists())
-        {
-            return (null, environment);
-        }
-
-        var displayName = envSection["Name"] ?? environment;
-        var url = envSection["Url"];
-        var clientId = envSection["Connections:0:ClientId"];
-        var clientSecret = envSection["Connections:0:ClientSecret"];
-
-        if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
-        {
-            return (null, displayName);
-        }
-
-        var connectionString = $"AuthType=ClientSecret;Url={url};ClientId={clientId};ClientSecret={clientSecret}";
-        return (connectionString, displayName);
-    }
-
-    /// <summary>
-    /// Gets the environment URL from configuration.
-    /// </summary>
-    public static string? GetEnvironmentUrl(IConfiguration config, string environment)
-    {
-        return config[$"Dataverse:Environments:{environment}:Url"];
     }
 }

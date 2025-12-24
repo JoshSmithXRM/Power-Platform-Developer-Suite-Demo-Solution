@@ -10,28 +10,37 @@ public static class WhoAmICommand
 {
     public static Command Create()
     {
-        var command = new Command("whoami", "Test connectivity with WhoAmI request");
+        var envOption = new Option<string?>(
+            aliases: ["--environment", "--env", "-e"],
+            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
 
-        command.SetHandler(async () =>
+        var command = new Command("whoami", "Test connectivity with WhoAmI request")
         {
-            await ExecuteAsync(Array.Empty<string>());
-        });
+            envOption
+        };
+
+        command.SetHandler(async (string? environment) =>
+        {
+            Environment.ExitCode = await ExecuteAsync(environment);
+        }, envOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(string[] args)
+    public static async Task<int> ExecuteAsync(string? environment = null)
     {
         Console.WriteLine("Testing Dataverse Connectivity");
         Console.WriteLine("==============================");
         Console.WriteLine();
 
-        using var host = CommandBase.CreateHost();
+        using var host = CommandBase.CreateHost(environment);
         var pool = CommandBase.GetConnectionPool(host);
 
         if (pool == null)
             return 1;
 
+        var envDisplay = environment ?? "(default)";
+        Console.WriteLine($"Environment: {envDisplay}");
         Console.WriteLine("Connecting to Dataverse...");
         Console.WriteLine();
 
@@ -65,9 +74,7 @@ public static class WhoAmICommand
         }
         catch (Exception ex)
         {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"Error: {ex.Message}");
-            Console.ResetColor();
+            CommandBase.WriteError($"Error: {ex.Message}");
             Console.WriteLine();
             return 1;
         }

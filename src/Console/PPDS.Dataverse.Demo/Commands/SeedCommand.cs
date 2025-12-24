@@ -1,11 +1,9 @@
 using System.CommandLine;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
 using PPDS.Dataverse.Demo.Models;
+using PPDS.Dataverse.Pooling;
 
 namespace PPDS.Dataverse.Demo.Commands;
 
@@ -23,44 +21,42 @@ public static class SeedCommand
 {
     public static Command Create()
     {
-        var command = new Command("seed", "Create sample accounts and contacts in Dataverse");
+        var envOption = new Option<string?>(
+            aliases: ["--environment", "--env", "-e"],
+            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
 
-        command.SetHandler(async () =>
+        var command = new Command("seed", "Create sample accounts and contacts in Dataverse")
         {
-            Environment.ExitCode = await ExecuteAsync([]);
-        });
+            envOption
+        };
+
+        command.SetHandler(async (string? environment) =>
+        {
+            Environment.ExitCode = await ExecuteAsync(environment);
+        }, envOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(string[] args)
+    public static async Task<int> ExecuteAsync(string? environment = null)
     {
         Console.WriteLine("Seeding Sample Data");
         Console.WriteLine("===================");
         Console.WriteLine();
 
-        // Get Dev environment connection
-        using var host = CommandBase.CreateHost("Dev");
-        var config = host.Services.GetRequiredService<IConfiguration>();
-        var (connectionString, envName) = CommandBase.BuildConnectionString(config, "Dev");
+        using var host = CommandBase.CreateHost(environment);
+        var pool = CommandBase.GetConnectionPool(host);
 
-        if (string.IsNullOrEmpty(connectionString))
-        {
-            CommandBase.WriteError("Dev environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
+        if (pool == null)
             return 1;
-        }
 
-        Console.WriteLine($"  Target: {envName}");
+        var envDisplay = environment ?? "(default)";
+        Console.WriteLine($"  Environment: {envDisplay}");
         Console.WriteLine();
 
         try
         {
-            using var client = new ServiceClient(connectionString);
-            if (!client.IsReady)
-            {
-                CommandBase.WriteError($"Failed to connect: {client.LastError}");
-                return 1;
-            }
+            await using var client = await pool.GetClientAsync();
 
             var accounts = SampleData.GetAccounts();
             var accountParentUpdates = SampleData.GetAccountParentUpdates();
@@ -157,7 +153,7 @@ public static class SeedCommand
             Console.WriteLine();
             Console.WriteLine("Next steps:");
             Console.WriteLine("  1. View data in Power Apps (make.powerapps.com)");
-            Console.WriteLine("  2. Export with: ppds-migrate export --schema schema.xml --output data.zip");
+            Console.WriteLine("  2. Export with: ppds-migrate export --env Dev --output data.zip");
             Console.WriteLine("  3. Clean up with: dotnet run -- clean");
             Console.WriteLine();
 
@@ -171,7 +167,7 @@ public static class SeedCommand
         }
     }
 
-    private static async Task DeleteMultipleAsync(ServiceClient client, string entityName, List<Guid> ids)
+    private static async Task DeleteMultipleAsync(IPooledClient client, string entityName, List<Guid> ids)
     {
         var request = new ExecuteMultipleRequest
         {
@@ -188,7 +184,7 @@ public static class SeedCommand
     }
 
     private static async Task<(int success, int failure)> CreateMultipleAsync(
-        ServiceClient client, string entityName, List<Entity> entities)
+        IPooledClient client, string entityName, List<Entity> entities)
     {
         var targets = new EntityCollection(entities) { EntityName = entityName };
         var request = new CreateMultipleRequest { Targets = targets };
@@ -206,7 +202,7 @@ public static class SeedCommand
     }
 
     private static async Task<(int success, int failure)> UpdateMultipleAsync(
-        ServiceClient client, string entityName, List<Entity> entities)
+        IPooledClient client, string entityName, List<Entity> entities)
     {
         var targets = new EntityCollection(entities) { EntityName = entityName };
         var request = new UpdateMultipleRequest { Targets = targets };

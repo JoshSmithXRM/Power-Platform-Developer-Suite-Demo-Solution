@@ -3,12 +3,10 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using PPDS.Dataverse.Demo.Models;
+using PPDS.Dataverse.Pooling;
 
 namespace PPDS.Dataverse.Demo.Commands;
 
@@ -77,20 +75,20 @@ public static class CrossEnvMigrationCommand
             return 1;
         }
 
-        using var host = CommandBase.CreateHost();
-        var config = host.Services.GetRequiredService<IConfiguration>();
+        // Create pools for both environments
+        using var devHost = CommandBase.CreateHost("Dev");
+        using var qaHost = CommandBase.CreateHost("QA");
 
-        // Get both environment connection strings
-        var (devConnectionString, devName) = CommandBase.BuildConnectionString(config, "Dev");
-        var (qaConnectionString, qaName) = CommandBase.BuildConnectionString(config, "QA");
+        var devPool = CommandBase.GetConnectionPool(devHost);
+        var qaPool = CommandBase.GetConnectionPool(qaHost);
 
-        if (string.IsNullOrEmpty(devConnectionString))
+        if (devPool == null)
         {
             CommandBase.WriteError("Dev environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
         }
 
-        if (string.IsNullOrEmpty(qaConnectionString))
+        if (qaPool == null)
         {
             CommandBase.WriteError("QA environment not configured.");
             Console.WriteLine();
@@ -103,8 +101,8 @@ public static class CrossEnvMigrationCommand
 
         // Display environment info
         Console.WriteLine("  Environments:");
-        Console.WriteLine($"    Source: {devName} ({ExtractOrgFromConnectionString(devConnectionString)})");
-        Console.WriteLine($"    Target: {qaName} ({ExtractOrgFromConnectionString(qaConnectionString)})");
+        Console.WriteLine("    Source: Dev");
+        Console.WriteLine("    Target: QA");
         Console.WriteLine();
 
         if (dryRun)
@@ -126,7 +124,7 @@ public static class CrossEnvMigrationCommand
                 Console.WriteLine("│ Phase 1: Seed Test Data in Dev                                 │");
                 Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
 
-                var seedResult = await SeedCommand.ExecuteAsync([]);
+                var seedResult = await SeedCommand.ExecuteAsync("Dev");
                 if (seedResult != 0)
                 {
                     CommandBase.WriteError("Seed failed");
@@ -137,13 +135,7 @@ public static class CrossEnvMigrationCommand
 
             // Verify source data
             Console.WriteLine("  Verifying source data in Dev...");
-            using var devClient = new ServiceClient(devConnectionString);
-            if (!devClient.IsReady)
-            {
-                CommandBase.WriteError($"Failed to connect to Dev: {devClient.LastError}");
-                return 1;
-            }
-
+            await using var devClient = await devPool.GetClientAsync();
             var sourceData = await QueryTestData(devClient);
             PrintDataSummary("  Dev", sourceData);
             Console.WriteLine();
@@ -160,7 +152,7 @@ public static class CrossEnvMigrationCommand
             // managed by the platform. User references (ownerid) are handled by user mapping.
             Console.Write("  Generating schema... ");
             var entities = "account,contact";
-            var schemaArgs = $"schema generate -e {entities} -o \"{SchemaPath}\" --connection \"{devConnectionString}\"";
+            var schemaArgs = $"schema generate -e {entities} -o \"{SchemaPath}\" --env Dev";
             if (includeM2M)
             {
                 // Only include M2M relationships between business entities (e.g., account-contact N:N)
@@ -178,7 +170,7 @@ public static class CrossEnvMigrationCommand
             // Export data
             Console.Write("  Exporting data... ");
             var exportResult = await RunCliAsync(
-                $"export --schema \"{SchemaPath}\" --output \"{DataPath}\" --connection \"{devConnectionString}\"", verbose);
+                $"export --schema \"{SchemaPath}\" --output \"{DataPath}\" --env Dev", verbose);
             if (exportResult != 0)
             {
                 CommandBase.WriteError("Export failed");
@@ -230,7 +222,7 @@ public static class CrossEnvMigrationCommand
             Console.WriteLine("│ Phase 4: Import to QA                                           │");
             Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
 
-            var importArgs = $"import --data \"{DataPath}\" --mode Upsert --connection \"{qaConnectionString}\"";
+            var importArgs = $"import --data \"{DataPath}\" --mode Upsert --env QA";
             if (File.Exists(UserMappingPath))
             {
                 importArgs += $" --user-mapping \"{UserMappingPath}\"";
@@ -254,13 +246,7 @@ public static class CrossEnvMigrationCommand
             Console.WriteLine("│ Phase 5: Verify in QA                                           │");
             Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
 
-            using var qaClient = new ServiceClient(qaConnectionString);
-            if (!qaClient.IsReady)
-            {
-                CommandBase.WriteError($"Failed to connect to QA: {qaClient.LastError}");
-                return 1;
-            }
-
+            await using var qaClient = await qaPool.GetClientAsync();
             var targetData = await QueryTestData(qaClient);
             PrintDataSummary("  QA", targetData);
             Console.WriteLine();
@@ -415,7 +401,7 @@ public static class CrossEnvMigrationCommand
         return process.ExitCode;
     }
 
-    private static async Task<TestData> QueryTestData(ServiceClient client)
+    private static async Task<TestData> QueryTestData(IPooledClient client)
     {
         var result = new TestData();
 
