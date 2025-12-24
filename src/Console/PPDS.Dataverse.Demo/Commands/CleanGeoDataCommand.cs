@@ -56,22 +56,9 @@ public static class CleanGeoDataCommand
 
     public static async Task<int> ExecuteAsync(bool zipOnly, bool confirm, int? parallelism = null, bool verbose = false, string? environment = null)
     {
-        Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
-        Console.WriteLine("║       Clean Geographic Data                                  ║");
-        Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
-        Console.WriteLine();
-
-        var envDisplay = environment ?? "(default)";
-        Console.WriteLine($"  Environment: {envDisplay}");
-
-        if (parallelism.HasValue)
-        {
-            Console.WriteLine($"  Parallelism: {parallelism.Value}");
-        }
-        if (verbose)
-        {
-            Console.WriteLine("  Verbose logging enabled");
-        }
+        Console.WriteLine("+==============================================================+");
+        Console.WriteLine("|       Clean Geographic Data                                  |");
+        Console.WriteLine("+==============================================================+");
         Console.WriteLine();
 
         // Create host with SDK services for bulk operations
@@ -85,6 +72,19 @@ public static class CleanGeoDataCommand
             return 1;
         }
 
+        var envDisplay = CommandBase.ResolveEnvironment(host, environment);
+        Console.WriteLine($"  Environment: {envDisplay}");
+
+        if (parallelism.HasValue)
+        {
+            Console.WriteLine($"  Parallelism: {parallelism.Value}");
+        }
+        if (verbose)
+        {
+            Console.WriteLine("  Verbose logging enabled");
+        }
+        Console.WriteLine();
+
         var totalStopwatch = Stopwatch.StartNew();
 
         try
@@ -94,12 +94,12 @@ public static class CleanGeoDataCommand
             Console.WriteLine($"  Connected to: {displayClient.ConnectedOrgFriendlyName} (Pool: {pool.Statistics.TotalConnections} connections)");
             Console.WriteLine();
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // Query all IDs to delete (no separate count - just query and use .Count)
-            // ═══════════════════════════════════════════════════════════════════
-            Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│ Querying Records                                                │");
-            Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+            // ===================================================================
+            Console.WriteLine("+-----------------------------------------------------------------+");
+            Console.WriteLine("| Querying Records                                                |");
+            Console.WriteLine("+-----------------------------------------------------------------+");
 
             Console.Write("  Querying ZIP code IDs... ");
             var zipIds = await QueryAllIdsAsync(pool, "ppds_zipcode");
@@ -156,15 +156,15 @@ public static class CleanGeoDataCommand
             var totalDeleted = 0;
             var totalErrors = 0;
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // Delete in dependency order: ZIP codes → cities → states
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
 
             if (zipIds.Count > 0)
             {
-                Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-                Console.WriteLine("│ Deleting ZIP Codes                                              │");
-                Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+                Console.WriteLine("+-----------------------------------------------------------------+");
+                Console.WriteLine("| Deleting ZIP Codes                                              |");
+                Console.WriteLine("+-----------------------------------------------------------------+");
 
                 var result = await DeleteWithProgressAsync(bulkExecutor, "ppds_zipcode", zipIds);
                 totalDeleted += result.SuccessCount;
@@ -174,9 +174,9 @@ public static class CleanGeoDataCommand
 
             if (!zipOnly && cityIds.Count > 0)
             {
-                Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-                Console.WriteLine("│ Deleting Cities                                                 │");
-                Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+                Console.WriteLine("+-----------------------------------------------------------------+");
+                Console.WriteLine("| Deleting Cities                                                 |");
+                Console.WriteLine("+-----------------------------------------------------------------+");
 
                 var result = await DeleteWithProgressAsync(bulkExecutor, "ppds_city", cityIds);
                 totalDeleted += result.SuccessCount;
@@ -186,9 +186,9 @@ public static class CleanGeoDataCommand
 
             if (!zipOnly && stateIds.Count > 0)
             {
-                Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-                Console.WriteLine("│ Deleting States                                                 │");
-                Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+                Console.WriteLine("+-----------------------------------------------------------------+");
+                Console.WriteLine("| Deleting States                                                 |");
+                Console.WriteLine("+-----------------------------------------------------------------+");
 
                 var result = await DeleteWithProgressAsync(bulkExecutor, "ppds_state", stateIds);
                 totalDeleted += result.SuccessCount;
@@ -196,24 +196,24 @@ public static class CleanGeoDataCommand
                 Console.WriteLine();
             }
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // Summary
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             totalStopwatch.Stop();
 
-            Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("+==============================================================+");
             if (totalErrors == 0)
             {
                 Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine("║              Clean Complete                                   ║");
+                Console.WriteLine("|              Clean Complete                                   |");
             }
             else
             {
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("║              Clean Complete (with errors)                     ║");
+                Console.WriteLine("|              Clean Complete (with errors)                     |");
             }
             Console.ResetColor();
-            Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+            Console.WriteLine("+==============================================================+");
             Console.WriteLine();
             Console.WriteLine($"  Total deleted: {totalDeleted:N0}");
             if (totalErrors > 0)

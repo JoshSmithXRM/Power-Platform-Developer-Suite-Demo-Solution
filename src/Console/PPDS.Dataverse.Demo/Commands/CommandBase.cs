@@ -107,6 +107,17 @@ public abstract class CommandBase
     }
 
     /// <summary>
+    /// Resolves the environment name, falling back to DefaultEnvironment from config.
+    /// Use this for display purposes instead of showing "(default)".
+    /// </summary>
+    public static string ResolveEnvironment(IHost host, string? environment)
+    {
+        if (environment != null) return environment;
+        var config = host.Services.GetRequiredService<IConfiguration>();
+        return GetDefaultEnvironment(config);
+    }
+
+    /// <summary>
     /// Gets the environment URL from configuration.
     /// </summary>
     public static string? GetEnvironmentUrl(IConfiguration config, string environment)

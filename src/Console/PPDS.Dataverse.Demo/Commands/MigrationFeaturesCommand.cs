@@ -58,9 +58,9 @@ public static class MigrationFeaturesCommand
 
     public static async Task<int> ExecuteAsync(string feature, bool verbose, string? environment = null)
     {
-        Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
-        Console.WriteLine("║          ppds-migrate Feature Demonstration                  ║");
-        Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+        Console.WriteLine("+==============================================================+");
+        Console.WriteLine("|          ppds-migrate Feature Demonstration                  |");
+        Console.WriteLine("+==============================================================+");
         Console.WriteLine();
 
         // Verify CLI exists
@@ -75,9 +75,8 @@ public static class MigrationFeaturesCommand
         var pool = CommandBase.GetConnectionPool(host);
         if (pool == null) return 1;
 
-        var envName = environment ?? "Dev"; // For CLI --env parameter
-        var envDisplay = environment ?? "(default)";
-        Console.WriteLine($"  Environment: {envDisplay}");
+        var envName = CommandBase.ResolveEnvironment(host, environment);
+        Console.WriteLine($"  Environment: {envName}");
         Console.WriteLine();
 
         try
@@ -105,11 +104,11 @@ public static class MigrationFeaturesCommand
             }
 
             Console.WriteLine();
-            Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("+==============================================================+");
             Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("║              FEATURE DEMO COMPLETE                           ║");
+            Console.WriteLine("|              FEATURE DEMO COMPLETE                           |");
             Console.ResetColor();
-            Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+            Console.WriteLine("+==============================================================+");
 
             return 0;
         }
@@ -126,9 +125,9 @@ public static class MigrationFeaturesCommand
 
     private static async Task DemoM2MRelationships(string envName, bool verbose)
     {
-        Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-        Console.WriteLine("│  Feature 1: Many-to-Many (M2M) Relationship Support            │");
-        Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+        Console.WriteLine("+-----------------------------------------------------------------+");
+        Console.WriteLine("|  Feature 1: Many-to-Many (M2M) Relationship Support            |");
+        Console.WriteLine("+-----------------------------------------------------------------+");
         Console.WriteLine();
         Console.WriteLine("  M2M relationships link entities without foreign keys.");
         Console.WriteLine("  Example: Users <-> Roles via systemuserroles intersect table.");
@@ -137,7 +136,7 @@ public static class MigrationFeaturesCommand
         // Show schema M2M configuration
         Console.WriteLine("  Schema Configuration:");
         Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.WriteLine("  ─────────────────────────────────────────────────────────────");
+        Console.WriteLine("  -------------------------------------------------------------");
         Console.WriteLine("  <relationships>");
         Console.WriteLine("    <relationship");
         Console.WriteLine("      name=\"systemuserroles\"");
@@ -176,7 +175,7 @@ public static class MigrationFeaturesCommand
         Console.WriteLine();
         Console.WriteLine("  Data Format (CMT-compatible):");
         Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.WriteLine("  ─────────────────────────────────────────────────────────────");
+        Console.WriteLine("  -------------------------------------------------------------");
         Console.WriteLine("  <m2mrelationships>");
         Console.WriteLine("    <m2mrelationship");
         Console.WriteLine("      sourceid=\"user-guid\"");
@@ -199,9 +198,9 @@ public static class MigrationFeaturesCommand
         _ = envName;
         _ = verbose;
 
-        Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-        Console.WriteLine("│  Feature 2: Attribute Filtering                                │");
-        Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+        Console.WriteLine("+-----------------------------------------------------------------+");
+        Console.WriteLine("|  Feature 2: Attribute Filtering                                |");
+        Console.WriteLine("+-----------------------------------------------------------------+");
         Console.WriteLine();
         Console.WriteLine("  Control which attributes are included in the schema.");
         Console.WriteLine("  Filtering happens during SCHEMA GENERATION, not export.");
@@ -240,7 +239,7 @@ public static class MigrationFeaturesCommand
         // Example workflow
         Console.WriteLine("  Workflow:");
         Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.WriteLine("  ─────────────────────────────────────────────────────────────");
+        Console.WriteLine("  -------------------------------------------------------------");
         Console.WriteLine("  # 1. Generate schema with filtering");
         Console.WriteLine("  ppds-migrate schema generate -e account,contact \\");
         Console.WriteLine("    --exclude-attributes createdon,modifiedon,createdby,modifiedby \\");
@@ -256,9 +255,9 @@ public static class MigrationFeaturesCommand
 
     private static void DemoUserMapping()
     {
-        Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-        Console.WriteLine("│  Feature 3: User Mapping                                       │");
-        Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+        Console.WriteLine("+-----------------------------------------------------------------+");
+        Console.WriteLine("|  Feature 3: User Mapping                                       |");
+        Console.WriteLine("+-----------------------------------------------------------------+");
         Console.WriteLine();
         Console.WriteLine("  Map user GUIDs between source and target environments.");
         Console.WriteLine("  Critical for cross-tenant migrations where user IDs differ.");
@@ -273,7 +272,7 @@ public static class MigrationFeaturesCommand
         // Show user mapping file format
         Console.WriteLine("  User Mapping File Format (XML):");
         Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.WriteLine("  ─────────────────────────────────────────────────────────────");
+        Console.WriteLine("  -------------------------------------------------------------");
         Console.WriteLine("  <usermappings>");
         Console.WriteLine("    <usermapping");
         Console.WriteLine("      sourceUserId=\"source-env-user-guid\"");
@@ -303,16 +302,16 @@ public static class MigrationFeaturesCommand
 
     private static void DemoPluginDisable()
     {
-        Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-        Console.WriteLine("│  Feature 4: Plugin Disable/Enable                              │");
-        Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+        Console.WriteLine("+-----------------------------------------------------------------+");
+        Console.WriteLine("|  Feature 4: Plugin Disable/Enable                              |");
+        Console.WriteLine("+-----------------------------------------------------------------+");
         Console.WriteLine();
         Console.WriteLine("  Control plugin execution during import via schema attribute.");
         Console.WriteLine();
 
         Console.WriteLine("  Schema Configuration:");
         Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.WriteLine("  ─────────────────────────────────────────────────────────────");
+        Console.WriteLine("  -------------------------------------------------------------");
         Console.WriteLine("  <!-- Disable plugins for faster bulk import -->");
         Console.WriteLine("  <entity name=\"account\" disableplugins=\"true\">");
         Console.WriteLine();

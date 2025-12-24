@@ -62,9 +62,9 @@ public static class CrossEnvMigrationCommand
 
     public static async Task<int> ExecuteAsync(bool skipSeed, bool dryRun, bool includeM2M, bool verbose = false)
     {
-        Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
-        Console.WriteLine("║       Cross-Environment Migration: Dev → QA                  ║");
-        Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+        Console.WriteLine("+==============================================================+");
+        Console.WriteLine("|       Cross-Environment Migration: Dev → QA                  |");
+        Console.WriteLine("+==============================================================+");
         Console.WriteLine();
 
         // Verify CLI exists
@@ -115,14 +115,14 @@ public static class CrossEnvMigrationCommand
 
         try
         {
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // PHASE 1: Seed test data in Dev (optional)
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             if (!skipSeed)
             {
-                Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-                Console.WriteLine("│ Phase 1: Seed Test Data in Dev                                 │");
-                Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+                Console.WriteLine("+-----------------------------------------------------------------+");
+                Console.WriteLine("| Phase 1: Seed Test Data in Dev                                 |");
+                Console.WriteLine("+-----------------------------------------------------------------+");
 
                 var seedResult = await SeedCommand.ExecuteAsync("Dev");
                 if (seedResult != 0)
@@ -140,12 +140,12 @@ public static class CrossEnvMigrationCommand
             PrintDataSummary("  Dev", sourceData);
             Console.WriteLine();
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // PHASE 2: Generate schema and export from Dev
-            // ═══════════════════════════════════════════════════════════════════
-            Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│ Phase 2: Export from Dev                                        │");
-            Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+            // ===================================================================
+            Console.WriteLine("+-----------------------------------------------------------------+");
+            Console.WriteLine("| Phase 2: Export from Dev                                        |");
+            Console.WriteLine("+-----------------------------------------------------------------+");
 
             // Generate schema
             // NOTE: Never include systemuser/team in cross-env migration - they're system entities
@@ -185,11 +185,11 @@ public static class CrossEnvMigrationCommand
 
             if (dryRun)
             {
-                Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("+==============================================================+");
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("║           DRY RUN COMPLETE - No import performed             ║");
+                Console.WriteLine("|           DRY RUN COMPLETE - No import performed             |");
                 Console.ResetColor();
-                Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+                Console.WriteLine("+==============================================================+");
                 Console.WriteLine();
                 Console.WriteLine($"  Export file: {DataPath}");
                 Console.WriteLine($"  Schema file: {SchemaPath}");
@@ -199,13 +199,13 @@ public static class CrossEnvMigrationCommand
                 return 0;
             }
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // PHASE 3: Generate user mapping
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // Always generate user mapping for cross-env migration - ownerid fields need remapping
-            Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│ Phase 3: Generate User Mapping                                  │");
-            Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+            Console.WriteLine("+-----------------------------------------------------------------+");
+            Console.WriteLine("| Phase 3: Generate User Mapping                                  |");
+            Console.WriteLine("+-----------------------------------------------------------------+");
 
             var mappingResult = await GenerateUserMappingCommand.ExecuteAsync(UserMappingPath, analyzeOnly: false);
             if (mappingResult != 0)
@@ -215,12 +215,12 @@ public static class CrossEnvMigrationCommand
             }
             Console.WriteLine();
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // PHASE 4: Import to QA
-            // ═══════════════════════════════════════════════════════════════════
-            Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│ Phase 4: Import to QA                                           │");
-            Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+            // ===================================================================
+            Console.WriteLine("+-----------------------------------------------------------------+");
+            Console.WriteLine("| Phase 4: Import to QA                                           |");
+            Console.WriteLine("+-----------------------------------------------------------------+");
 
             var importArgs = $"import --data \"{DataPath}\" --mode Upsert --env QA";
             if (File.Exists(UserMappingPath))
@@ -239,12 +239,12 @@ public static class CrossEnvMigrationCommand
             CommandBase.WriteSuccess("Done");
             Console.WriteLine();
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // PHASE 5: Verify in QA
-            // ═══════════════════════════════════════════════════════════════════
-            Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│ Phase 5: Verify in QA                                           │");
-            Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+            // ===================================================================
+            Console.WriteLine("+-----------------------------------------------------------------+");
+            Console.WriteLine("| Phase 5: Verify in QA                                           |");
+            Console.WriteLine("+-----------------------------------------------------------------+");
 
             await using var qaClient = await qaPool.GetClientAsync();
             var targetData = await QueryTestData(qaClient);
@@ -285,25 +285,25 @@ public static class CrossEnvMigrationCommand
 
             Console.WriteLine();
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // RESULT
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             if (passed)
             {
-                Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("+==============================================================+");
                 Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine("║         MIGRATION COMPLETE: Dev → QA SUCCESS                 ║");
+                Console.WriteLine("|         MIGRATION COMPLETE: Dev → QA SUCCESS                 |");
                 Console.ResetColor();
-                Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+                Console.WriteLine("+==============================================================+");
                 return 0;
             }
             else
             {
-                Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("+==============================================================+");
                 Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("║         MIGRATION VERIFICATION FAILED                        ║");
+                Console.WriteLine("|         MIGRATION VERIFICATION FAILED                        |");
                 Console.ResetColor();
-                Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+                Console.WriteLine("+==============================================================+");
                 return 1;
             }
         }

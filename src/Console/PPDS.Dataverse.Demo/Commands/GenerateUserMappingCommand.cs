@@ -39,9 +39,9 @@ public static class GenerateUserMappingCommand
 
     public static async Task<int> ExecuteAsync(string outputPath, bool analyzeOnly)
     {
-        Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
-        Console.WriteLine("║       Generate User Mapping: Dev → QA                        ║");
-        Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+        Console.WriteLine("+==============================================================+");
+        Console.WriteLine("|       Generate User Mapping: Dev → QA                        |");
+        Console.WriteLine("+==============================================================+");
         Console.WriteLine();
 
         // Create pools for both environments

@@ -39,9 +39,9 @@ public static class CreateGeoSchemaCommand
 
     public static async Task<int> ExecuteAsync(bool deleteFirst, string? environment = null)
     {
-        Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
-        Console.WriteLine("║       Create Geographic Schema for Volume Testing            ║");
-        Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+        Console.WriteLine("+==============================================================+");
+        Console.WriteLine("|       Create Geographic Schema for Volume Testing            |");
+        Console.WriteLine("+==============================================================+");
         Console.WriteLine();
 
         using var host = CommandBase.CreateHost(environment);
@@ -50,7 +50,7 @@ public static class CreateGeoSchemaCommand
         if (pool == null)
             return 1;
 
-        var envDisplay = environment ?? "(default)";
+        var envDisplay = CommandBase.ResolveEnvironment(host, environment);
         Console.WriteLine($"  Environment: {envDisplay}");
         Console.WriteLine();
 
@@ -84,11 +84,11 @@ public static class CreateGeoSchemaCommand
             await CreateZipCodeTableAsync(client);
 
             Console.WriteLine();
-            Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("+==============================================================+");
             Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("║              Schema Creation Complete                         ║");
+            Console.WriteLine("|              Schema Creation Complete                         |");
             Console.ResetColor();
-            Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+            Console.WriteLine("+==============================================================+");
             Console.WriteLine();
             Console.WriteLine("  Tables created:");
             Console.WriteLine("    - ppds_state (State/Province)");

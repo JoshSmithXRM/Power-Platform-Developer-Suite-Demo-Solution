@@ -48,7 +48,7 @@ public static class CleanCommand
         if (pool == null)
             return 1;
 
-        var envDisplay = environment ?? "(default)";
+        var envDisplay = CommandBase.ResolveEnvironment(host, environment);
         Console.WriteLine($"  Environment: {envDisplay}");
         Console.WriteLine();
 

@@ -73,22 +73,9 @@ public static class LoadGeoDataCommand
 
     public static async Task<int> ExecuteAsync(int? limit, bool skipDownload, bool statesOnly, int? parallelism = null, bool verbose = false, string? environment = null)
     {
-        Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
-        Console.WriteLine("║       Load Geographic Data for Volume Testing                ║");
-        Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
-        Console.WriteLine();
-
-        var envDisplay = environment ?? "(default)";
-        Console.WriteLine($"  Environment: {envDisplay}");
-
-        if (parallelism.HasValue)
-        {
-            Console.WriteLine($"  Parallelism: {parallelism.Value}");
-        }
-        if (verbose)
-        {
-            Console.WriteLine("  Verbose logging enabled");
-        }
+        Console.WriteLine("+==============================================================+");
+        Console.WriteLine("|       Load Geographic Data for Volume Testing                |");
+        Console.WriteLine("+==============================================================+");
         Console.WriteLine();
 
         // Create host with SDK services for bulk operations
@@ -102,16 +89,29 @@ public static class LoadGeoDataCommand
             return 1;
         }
 
+        var envDisplay = CommandBase.ResolveEnvironment(host, environment);
+        Console.WriteLine($"  Environment: {envDisplay}");
+
+        if (parallelism.HasValue)
+        {
+            Console.WriteLine($"  Parallelism: {parallelism.Value}");
+        }
+        if (verbose)
+        {
+            Console.WriteLine("  Verbose logging enabled");
+        }
+        Console.WriteLine();
+
         var totalStopwatch = Stopwatch.StartNew();
 
         try
         {
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // PHASE 1: Download/Load CSV
-            // ═══════════════════════════════════════════════════════════════════
-            Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│ Phase 1: Load CSV Data                                          │");
-            Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+            // ===================================================================
+            Console.WriteLine("+-----------------------------------------------------------------+");
+            Console.WriteLine("| Phase 1: Load CSV Data                                          |");
+            Console.WriteLine("+-----------------------------------------------------------------+");
 
             List<ZipCodeRecord> zipCodes;
             if (!skipDownload || !File.Exists(CachePath))
@@ -133,12 +133,12 @@ public static class LoadGeoDataCommand
             }
             Console.WriteLine();
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // PHASE 2: Connect to Dataverse
-            // ═══════════════════════════════════════════════════════════════════
-            Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│ Phase 2: Connect to Dataverse                                   │");
-            Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+            // ===================================================================
+            Console.WriteLine("+-----------------------------------------------------------------+");
+            Console.WriteLine("| Phase 2: Connect to Dataverse                                   |");
+            Console.WriteLine("+-----------------------------------------------------------------+");
 
             // Get a client from the pool for state operations
             await using var pooledClient = await pool.GetClientAsync();
@@ -146,12 +146,12 @@ public static class LoadGeoDataCommand
             Console.WriteLine($"  Connected to: {pooledClient.ConnectedOrgFriendlyName} (Pool: {pool.Statistics.TotalConnections} connections)");
             Console.WriteLine();
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // PHASE 3: Load States
-            // ═══════════════════════════════════════════════════════════════════
-            Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│ Phase 3: Load States                                            │");
-            Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+            // ===================================================================
+            Console.WriteLine("+-----------------------------------------------------------------+");
+            Console.WriteLine("| Phase 3: Load States                                            |");
+            Console.WriteLine("+-----------------------------------------------------------------+");
 
             var stateStopwatch = Stopwatch.StartNew();
 
@@ -183,12 +183,12 @@ public static class LoadGeoDataCommand
                 return 0;
             }
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // PHASE 4: Load ZIP Codes (using PPDS.Dataverse SDK)
-            // ═══════════════════════════════════════════════════════════════════
-            Console.WriteLine("┌─────────────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│ Phase 4: Load ZIP Codes                                         │");
-            Console.WriteLine("└─────────────────────────────────────────────────────────────────┘");
+            // ===================================================================
+            Console.WriteLine("+-----------------------------------------------------------------+");
+            Console.WriteLine("| Phase 4: Load ZIP Codes                                         |");
+            Console.WriteLine("+-----------------------------------------------------------------+");
 
             // Build entities for upsert
             var (entities, skipped) = BuildZipCodeEntities(zipCodes, stateMap, verbose);
@@ -248,19 +248,19 @@ public static class LoadGeoDataCommand
     {
         totalStopwatch.Stop();
 
-        Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
+        Console.WriteLine("+==============================================================+");
         if (errors == 0)
         {
             Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("║              Data Load Complete                               ║");
+            Console.WriteLine("|              Data Load Complete                               |");
         }
         else
         {
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("║              Data Load Complete (with errors)                 ║");
+            Console.WriteLine("|              Data Load Complete (with errors)                 |");
         }
         Console.ResetColor();
-        Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+        Console.WriteLine("+==============================================================+");
         Console.WriteLine();
         Console.WriteLine($"  Total time: {totalStopwatch.Elapsed.TotalSeconds:F2}s");
         Console.WriteLine($"  States: {states}");

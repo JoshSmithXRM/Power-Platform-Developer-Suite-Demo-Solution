@@ -48,9 +48,9 @@ public static class TestMigrationCommand
 
     public static async Task<int> ExecuteAsync(bool skipSeed, bool skipClean, string? environment = null)
     {
-        Console.WriteLine("╔══════════════════════════════════════════════════════════╗");
-        Console.WriteLine("║         ppds-migrate End-to-End Test                     ║");
-        Console.WriteLine("╚══════════════════════════════════════════════════════════╝");
+        Console.WriteLine("+==========================================================+");
+        Console.WriteLine("|         ppds-migrate End-to-End Test                     |");
+        Console.WriteLine("+==========================================================+");
         Console.WriteLine();
 
         // Verify CLI exists
@@ -66,22 +66,21 @@ public static class TestMigrationCommand
         if (pool == null) return 1;
 
         var bulkExecutor = host.Services.GetRequiredService<IBulkOperationExecutor>();
-        var envName = environment ?? "Dev"; // For CLI --env parameter
+        var envName = CommandBase.ResolveEnvironment(host, environment);
 
-        var envDisplay = environment ?? "(default)";
-        Console.WriteLine($"  Environment: {envDisplay}");
+        Console.WriteLine($"  Environment: {envName}");
         Console.WriteLine();
 
         try
         {
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // PHASE 1: Seed test data with relationships
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             if (!skipSeed)
             {
-                Console.WriteLine("┌─────────────────────────────────────────────────────────┐");
-                Console.WriteLine("│ Phase 1: Seed Test Data                                 │");
-                Console.WriteLine("└─────────────────────────────────────────────────────────┘");
+                Console.WriteLine("+---------------------------------------------------------+");
+                Console.WriteLine("| Phase 1: Seed Test Data                                 |");
+                Console.WriteLine("+---------------------------------------------------------+");
 
                 var accounts = SampleData.GetAccounts();
                 var accountParentUpdates = SampleData.GetAccountParentUpdates();
@@ -114,12 +113,12 @@ public static class TestMigrationCommand
             PrintDataSummary("  Source", sourceData);
             Console.WriteLine();
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // PHASE 2: Generate schema and export
-            // ═══════════════════════════════════════════════════════════════════
-            Console.WriteLine("┌─────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│ Phase 2: Generate Schema & Export                       │");
-            Console.WriteLine("└─────────────────────────────────────────────────────────┘");
+            // ===================================================================
+            Console.WriteLine("+---------------------------------------------------------+");
+            Console.WriteLine("| Phase 2: Generate Schema & Export                       |");
+            Console.WriteLine("+---------------------------------------------------------+");
 
             // Generate schema
             Console.Write("  Generating schema... ");
@@ -148,14 +147,14 @@ public static class TestMigrationCommand
             InspectExportedData(DataPath);
             Console.WriteLine();
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // PHASE 3: Clean data
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             if (!skipClean)
             {
-                Console.WriteLine("┌─────────────────────────────────────────────────────────┐");
-                Console.WriteLine("│ Phase 3: Clean Test Data                                │");
-                Console.WriteLine("└─────────────────────────────────────────────────────────┘");
+                Console.WriteLine("+---------------------------------------------------------+");
+                Console.WriteLine("| Phase 3: Clean Test Data                                |");
+                Console.WriteLine("+---------------------------------------------------------+");
 
                 // Delete contacts first (foreign key constraint)
                 var contactIds = SampleData.GetContacts().Select(c => c.Id).ToList();
@@ -177,12 +176,12 @@ public static class TestMigrationCommand
                 Console.WriteLine();
             }
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // PHASE 4: Import data
-            // ═══════════════════════════════════════════════════════════════════
-            Console.WriteLine("┌─────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│ Phase 4: Import Data                                    │");
-            Console.WriteLine("└─────────────────────────────────────────────────────────┘");
+            // ===================================================================
+            Console.WriteLine("+---------------------------------------------------------+");
+            Console.WriteLine("| Phase 4: Import Data                                    |");
+            Console.WriteLine("+---------------------------------------------------------+");
 
             Console.Write("  Importing data... ");
             var importResult = await RunCliAsync(
@@ -195,12 +194,12 @@ public static class TestMigrationCommand
             CommandBase.WriteSuccess("Done");
             Console.WriteLine();
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // PHASE 5: Verify imported data
-            // ═══════════════════════════════════════════════════════════════════
-            Console.WriteLine("┌─────────────────────────────────────────────────────────┐");
-            Console.WriteLine("│ Phase 5: Verify Import                                  │");
-            Console.WriteLine("└─────────────────────────────────────────────────────────┘");
+            // ===================================================================
+            Console.WriteLine("+---------------------------------------------------------+");
+            Console.WriteLine("| Phase 5: Verify Import                                  |");
+            Console.WriteLine("+---------------------------------------------------------+");
 
             var importedData = await QueryTestData(pool);
             PrintDataSummary("  Imported", importedData);
@@ -240,25 +239,25 @@ public static class TestMigrationCommand
 
             Console.WriteLine();
 
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             // RESULT
-            // ═══════════════════════════════════════════════════════════════════
+            // ===================================================================
             if (passed)
             {
-                Console.WriteLine("╔══════════════════════════════════════════════════════════╗");
+                Console.WriteLine("+==========================================================+");
                 Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine("║                    TEST PASSED ✓                         ║");
+                Console.WriteLine("|                    TEST PASSED ✓                         |");
                 Console.ResetColor();
-                Console.WriteLine("╚══════════════════════════════════════════════════════════╝");
+                Console.WriteLine("+==========================================================+");
                 return 0;
             }
             else
             {
-                Console.WriteLine("╔══════════════════════════════════════════════════════════╗");
+                Console.WriteLine("+==========================================================+");
                 Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("║                    TEST FAILED ✗                         ║");
+                Console.WriteLine("|                    TEST FAILED ✗                         |");
                 Console.ResetColor();
-                Console.WriteLine("╚══════════════════════════════════════════════════════════╝");
+                Console.WriteLine("+==========================================================+");
                 return 1;
             }
         }
