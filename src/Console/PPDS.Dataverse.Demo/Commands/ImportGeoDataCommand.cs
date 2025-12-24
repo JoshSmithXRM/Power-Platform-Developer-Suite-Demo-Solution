@@ -194,7 +194,7 @@ public static class ImportGeoDataCommand
 
             Console.Write("  Importing data package... ");
             var importResult = await RunCliAsync(
-                $"import --data \"{dataPath}\" --mode Upsert --env {environment}", verbose);
+                $"import --data \"{dataPath}\" --mode Upsert --env {environment} --secrets-id ppds-dataverse-demo", verbose);
             if (importResult != 0)
             {
                 CommandBase.WriteError("Import failed");

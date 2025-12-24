@@ -144,7 +144,7 @@ public static class ExportGeoDataCommand
             Console.Write($"  Generating schema for: {geoEntities}... ");
 
             var schemaResult = await RunCliAsync(
-                $"schema generate -e {geoEntities} -o \"{DefaultSchemaPath}\" --env {env}", verbose);
+                $"schema generate -e {geoEntities} -o \"{DefaultSchemaPath}\" --env {env} --secrets-id ppds-dataverse-demo", verbose);
             if (schemaResult != 0)
             {
                 CommandBase.WriteError("Schema generation failed");
@@ -163,7 +163,7 @@ public static class ExportGeoDataCommand
 
             Console.Write("  Exporting data package... ");
             var exportResult = await RunCliAsync(
-                $"export --schema \"{DefaultSchemaPath}\" --output \"{output}\" --env {env}", verbose);
+                $"export --schema \"{DefaultSchemaPath}\" --output \"{output}\" --env {env} --secrets-id ppds-dataverse-demo", verbose);
             if (exportResult != 0)
             {
                 CommandBase.WriteError("Export failed");

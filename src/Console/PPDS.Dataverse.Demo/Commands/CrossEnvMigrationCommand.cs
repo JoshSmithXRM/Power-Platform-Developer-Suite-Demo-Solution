@@ -152,7 +152,7 @@ public static class CrossEnvMigrationCommand
             // managed by the platform. User references (ownerid) are handled by user mapping.
             Console.Write("  Generating schema... ");
             var entities = "account,contact";
-            var schemaArgs = $"schema generate -e {entities} -o \"{SchemaPath}\" --env Dev";
+            var schemaArgs = $"schema generate -e {entities} -o \"{SchemaPath}\" --env Dev --secrets-id ppds-dataverse-demo";
             if (includeM2M)
             {
                 // Only include M2M relationships between business entities (e.g., account-contact N:N)
@@ -170,7 +170,7 @@ public static class CrossEnvMigrationCommand
             // Export data
             Console.Write("  Exporting data... ");
             var exportResult = await RunCliAsync(
-                $"export --schema \"{SchemaPath}\" --output \"{DataPath}\" --env Dev", verbose);
+                $"export --schema \"{SchemaPath}\" --output \"{DataPath}\" --env Dev --secrets-id ppds-dataverse-demo", verbose);
             if (exportResult != 0)
             {
                 CommandBase.WriteError("Export failed");
@@ -222,7 +222,7 @@ public static class CrossEnvMigrationCommand
             Console.WriteLine("| Phase 4: Import to QA                                           |");
             Console.WriteLine("+-----------------------------------------------------------------+");
 
-            var importArgs = $"import --data \"{DataPath}\" --mode Upsert --env QA";
+            var importArgs = $"import --data \"{DataPath}\" --mode Upsert --env QA --secrets-id ppds-dataverse-demo";
             if (File.Exists(UserMappingPath))
             {
                 importArgs += $" --user-mapping \"{UserMappingPath}\"";

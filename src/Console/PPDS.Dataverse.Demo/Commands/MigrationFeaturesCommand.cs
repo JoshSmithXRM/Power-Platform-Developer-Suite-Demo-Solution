@@ -151,7 +151,7 @@ public static class MigrationFeaturesCommand
         Console.Write("  Exporting with M2M relationships... ");
 
         var exportResult = await RunCliAsync(
-            $"export --schema \"{SchemaPath}\" --output \"{OutputPath}\" --env {envName}",
+            $"export --schema \"{SchemaPath}\" --output \"{OutputPath}\" --env {envName} --secrets-id ppds-dataverse-demo",
             verbose);
 
         if (exportResult == 0)

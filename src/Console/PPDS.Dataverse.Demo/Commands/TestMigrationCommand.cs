@@ -137,7 +137,7 @@ public static class TestMigrationCommand
             // Generate schema
             Console.Write("  Generating schema... ");
             var schemaResult = await RunCliAsync(
-                $"schema generate -e account,contact -o \"{SchemaPath}\" --env {envName}");
+                $"schema generate -e account,contact -o \"{SchemaPath}\" --env {envName} --secrets-id ppds-dataverse-demo");
             if (schemaResult != 0)
             {
                 CommandBase.WriteError("Schema generation failed");
@@ -148,7 +148,7 @@ public static class TestMigrationCommand
             // Export data
             Console.Write("  Exporting data... ");
             var exportResult = await RunCliAsync(
-                $"export --schema \"{SchemaPath}\" --output \"{DataPath}\" --env {envName}");
+                $"export --schema \"{SchemaPath}\" --output \"{DataPath}\" --env {envName} --secrets-id ppds-dataverse-demo");
             if (exportResult != 0)
             {
                 CommandBase.WriteError("Export failed");
@@ -199,7 +199,7 @@ public static class TestMigrationCommand
 
             Console.Write("  Importing data... ");
             var importResult = await RunCliAsync(
-                $"import --data \"{DataPath}\" --mode Upsert --env {envName}");
+                $"import --data \"{DataPath}\" --mode Upsert --env {envName} --secrets-id ppds-dataverse-demo");
             if (importResult != 0)
             {
                 CommandBase.WriteError("Import failed");
