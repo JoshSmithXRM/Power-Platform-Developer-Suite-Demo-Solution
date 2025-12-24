@@ -146,13 +146,6 @@ public abstract class CommandBase
         var clientId = envSection["Connections:0:ClientId"];
         var clientSecret = envSection["Connections:0:ClientSecret"];
 
-        // Check for environment variable-based secret
-        var clientSecretVariable = envSection["Connections:0:ClientSecretVariable"];
-        if (!string.IsNullOrEmpty(clientSecretVariable) && string.IsNullOrEmpty(clientSecret))
-        {
-            clientSecret = Environment.GetEnvironmentVariable(clientSecretVariable);
-        }
-
         if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
         {
             return (null, displayName);

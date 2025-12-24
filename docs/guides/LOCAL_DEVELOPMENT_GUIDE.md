@@ -6,11 +6,11 @@ This guide covers setting up your local development environment for .NET project
 
 ## Prerequisites
 
-| Requirement | Purpose |
-|-------------|---------|
-| [.NET SDK 8.0+](https://dotnet.microsoft.com/download) | Building and running .NET projects |
-| Azure AD App Registration | Service Principal for Dataverse authentication |
-| Dataverse environment | Target for local testing |
+| Requirement                                            | Purpose                                        |
+| ------------------------------------------------------ | ---------------------------------------------- |
+| [.NET SDK 8.0+](https://dotnet.microsoft.com/download) | Building and running .NET projects             |
+| Azure AD App Registration                              | Service Principal for Dataverse authentication |
+| Dataverse environment                                  | Target for local testing                       |
 
 ---
 
@@ -18,11 +18,11 @@ This guide covers setting up your local development environment for .NET project
 
 This repository uses a layered approach to credential management:
 
-| Source | Purpose | Committed to Git |
-|--------|---------|------------------|
-| `appsettings.json` | Configuration structure and placeholders | Yes |
-| `.NET User Secrets` | Developer-specific values including secrets | No (stored in `%APPDATA%`) |
-| Environment variables | CI/CD and production deployments | No |
+| Source                | Purpose                                     | Committed to Git           |
+| --------------------- | ------------------------------------------- | -------------------------- |
+| `appsettings.json`    | Configuration structure and placeholders    | Yes                        |
+| `.NET User Secrets`   | Developer-specific values including secrets | No (stored in `%APPDATA%`) |
+| Environment variables | CI/CD and production deployments            | No                         |
 
 ### Configuration Flow
 
@@ -80,14 +80,14 @@ All environments are configured under `Dataverse:Environments:*`. Each environme
 
 ### Configuration Properties
 
-| Property | Purpose |
-|----------|---------|
-| `Dataverse:Environments:{env}:Url` | Environment URL |
-| `Dataverse:Environments:{env}:Connections:N:Name` | Connection identifier for logging |
-| `Dataverse:Environments:{env}:Connections:N:ClientId` | Azure AD App Registration ID |
-| `Dataverse:Environments:{env}:Connections:N:ClientSecret` | Client secret (development) |
-| `Dataverse:Environments:{env}:Connections:N:ClientSecretVariable` | Env var name for secret (production) |
-| `Dataverse:DefaultEnvironment` | Default environment when not specified |
+| Property                                                  | Purpose                                |
+| --------------------------------------------------------- | -------------------------------------- |
+| `Dataverse:Environments:{env}:Url`                        | Environment URL                        |
+| `Dataverse:Environments:{env}:Connections:N:Name`         | Connection identifier for logging      |
+| `Dataverse:Environments:{env}:Connections:N:ClientId`     | Azure AD App Registration ID           |
+| `Dataverse:Environments:{env}:Connections:N:ClientSecret` | Client secret (development)            |
+| `Dataverse:Environments:{env}:Connections:N:ClientSecret` | Env var name for secret (production)   |
+| `Dataverse:DefaultEnvironment`                            | Default environment when not specified |
 
 ---
 
@@ -97,11 +97,11 @@ All environments are configured under `Dataverse:Environments:*`. Each environme
 
 You need the following from your Azure AD App Registration:
 
-| Value | Where to Find |
-|-------|---------------|
+| Value         | Where to Find                                                           |
+| ------------- | ----------------------------------------------------------------------- |
 | Dataverse URL | Power Platform Admin Center > Environments > Your Env > Environment URL |
-| Client ID | Azure Portal > App Registrations > Your App > Application (client) ID |
-| Client Secret | Azure Portal > App Registrations > Your App > Certificates & secrets |
+| Client ID     | Azure Portal > App Registrations > Your App > Application (client) ID   |
+| Client Secret | Azure Portal > App Registrations > Your App > Certificates & secrets    |
 
 ### Step 2: Configure User Secrets
 
@@ -184,10 +184,10 @@ Pool Statistics:
 
 Secrets are stored outside the project directory:
 
-| OS | Location |
-|----|----------|
-| Windows | `%APPDATA%\Microsoft\UserSecrets\{UserSecretsId}\secrets.json` |
-| macOS/Linux | `~/.microsoft/usersecrets/{UserSecretsId}/secrets.json` |
+| OS          | Location                                                       |
+| ----------- | -------------------------------------------------------------- |
+| Windows     | `%APPDATA%\Microsoft\UserSecrets\{UserSecretsId}\secrets.json` |
+| macOS/Linux | `~/.microsoft/usersecrets/{UserSecretsId}/secrets.json`        |
 
 The `UserSecretsId` is defined in the project's `.csproj` file:
 
@@ -217,16 +217,19 @@ This binds configuration from `Dataverse:Environments:Dev:*`.
 User secrets are not configured or not being loaded.
 
 **Check 1:** Verify secrets exist
+
 ```powershell
 dotnet user-secrets list
 ```
 
 **Check 2:** Verify environment is Development
+
 ```powershell
 echo $env:DOTNET_ENVIRONMENT  # Should be "Development" or not set
 ```
 
 **Check 3:** Verify UserSecretsId in .csproj
+
 ```xml
 <UserSecretsId>ppds-dataverse-demo</UserSecretsId>
 ```
@@ -236,11 +239,13 @@ echo $env:DOTNET_ENVIRONMENT  # Should be "Development" or not set
 The Dev environment configuration is missing.
 
 **Check:** Verify the full path in user secrets:
+
 ```powershell
 dotnet user-secrets list | findstr "Dev"
 ```
 
 Should show:
+
 ```
 Dataverse:Environments:Dev:Url = ...
 Dataverse:Environments:Dev:Connections:0:ClientId = ...
@@ -252,15 +257,18 @@ Dataverse:Environments:Dev:Connections:0:ClientSecret = ...
 Credentials are invalid or Service Principal lacks access.
 
 **Check 1:** Verify URL format
+
 ```
 https://yourorg.crm.dynamics.com  (no trailing slash)
 ```
 
 **Check 2:** Verify Service Principal has access
+
 - Must be registered as Application User in the target environment
 - Must have System Administrator or appropriate security role
 
 **Check 3:** Test credentials with PAC CLI
+
 ```powershell
 pac auth create --name test `
   --applicationId YOUR_CLIENT_ID `
@@ -315,7 +323,7 @@ dotnet run -- generate-user-mapping
 
 For production deployments, use environment variables instead of User Secrets.
 
-### Using ClientSecretVariable
+### Using ClientSecret
 
 Configure `appsettings.json` or environment-specific config:
 
@@ -329,7 +337,7 @@ Configure `appsettings.json` or environment-specific config:
           {
             "Name": "Primary",
             "ClientId": "production-client-id",
-            "ClientSecretVariable": "DATAVERSE_SECRET"
+            "ClientSecret": "DATAVERSE_SECRET"
           }
         ]
       }
@@ -340,13 +348,13 @@ Configure `appsettings.json` or environment-specific config:
 
 The platform sets the environment variable:
 
-| Platform | How to Set |
-|----------|------------|
-| Azure App Service | Configuration > Application settings |
-| GitHub Actions | Repository secrets + `env:` in workflow |
-| Azure DevOps | Pipeline variables (secret) |
-| Docker | `-e DATAVERSE_SECRET=xxx` or docker-compose |
-| Kubernetes | Secret + environment variable in deployment |
+| Platform          | How to Set                                  |
+| ----------------- | ------------------------------------------- |
+| Azure App Service | Configuration > Application settings        |
+| GitHub Actions    | Repository secrets + `env:` in workflow     |
+| Azure DevOps      | Pipeline variables (secret)                 |
+| Docker            | `-e DATAVERSE_SECRET=xxx` or docker-compose |
+| Kubernetes        | Secret + environment variable in deployment |
 
 ### Environment Variable Format
 
@@ -366,14 +374,14 @@ export Dataverse__Environments__Dev__Connections__0__ClientId="client-id"
 
 ## Security Best Practices
 
-| Practice | Reason |
-|----------|--------|
-| Never commit secrets to git | Use `.gitignore` for `secrets.json`, `.env.*` |
-| Use Service Principals | Not tied to user accounts, can be rotated |
-| Rotate secrets regularly | Limit blast radius of compromised credentials |
-| Use different credentials per environment | Dev credentials can't access Prod |
-| Use User Secrets for development | Microsoft-recommended secure local storage |
-| Use environment variables for production | Secrets never in config files |
+| Practice                                  | Reason                                        |
+| ----------------------------------------- | --------------------------------------------- |
+| Never commit secrets to git               | Use `.gitignore` for `secrets.json`, `.env.*` |
+| Use Service Principals                    | Not tied to user accounts, can be rotated     |
+| Rotate secrets regularly                  | Limit blast radius of compromised credentials |
+| Use different credentials per environment | Dev credentials can't access Prod             |
+| Use User Secrets for development          | Microsoft-recommended secure local storage    |
+| Use environment variables for production  | Secrets never in config files                 |
 
 ---
 
