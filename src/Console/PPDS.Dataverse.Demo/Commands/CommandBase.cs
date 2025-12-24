@@ -82,9 +82,13 @@ public abstract class CommandBase
             Console.WriteLine("Configure using .NET User Secrets:");
             Console.WriteLine();
             Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Connections:0:Name\" \"Primary\"");
-            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Connections:0:ConnectionString\" \"AuthType=ClientSecret;Url=...\"");
+            Console.WriteLine("  cd src/Console/PPDS.Dataverse.Demo");
+            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Url\" \"https://YOUR-ORG.crm.dynamics.com\"");
+            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Connections:0:ClientId\" \"your-client-id\"");
+            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Connections:0:ClientSecret\" \"your-client-secret\"");
             Console.ResetColor();
+            Console.WriteLine();
+            Console.WriteLine("See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md for details.");
             Console.WriteLine();
             return null;
         }

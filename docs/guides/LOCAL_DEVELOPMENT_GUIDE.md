@@ -9,7 +9,7 @@ This guide covers setting up your local development environment for .NET project
 | Requirement | Purpose |
 |-------------|---------|
 | [.NET SDK 8.0+](https://dotnet.microsoft.com/download) | Building and running .NET projects |
-| Access to `.env.dev` file | Contains environment credentials |
+| Azure AD App Registration | Service Principal for Dataverse authentication |
 | Dataverse environment | Target for local testing |
 
 ---
@@ -20,17 +20,16 @@ This repository uses a layered approach to credential management:
 
 | Source | Purpose | Committed to Git |
 |--------|---------|------------------|
-| `.env.{environment}` files | Master credential store for each environment | No (gitignored) |
-| `.NET User Secrets` | Per-project secrets for local development | No (stored in `%APPDATA%`) |
-| `appsettings.json` | Non-sensitive configuration defaults | Yes |
-| Environment variables | CI/CD and container deployments | No |
+| `appsettings.json` | Configuration structure and placeholders | Yes |
+| `.NET User Secrets` | Developer-specific values including secrets | No (stored in `%APPDATA%`) |
+| Environment variables | CI/CD and production deployments | No |
 
-### Credential Flow
+### Configuration Flow
 
 ```
-.env.dev (master credentials)
+appsettings.json (structure + placeholders)
     ↓
-dotnet user-secrets set (one-time setup)
+User Secrets override placeholders
     ↓
 %APPDATA%\Microsoft\UserSecrets\{project-id}\secrets.json
     ↓
@@ -41,63 +40,68 @@ IConfiguration available in your app
 
 ---
 
-## Setting Up .NET User Secrets
+## Typed Configuration
 
-### Step 1: Locate Your Credentials
+The SDK uses **typed configuration** instead of raw connection strings. This provides:
 
-Open the `.env.dev` file in the repository root. You'll find credentials in this format:
+- Better security (secrets separate from config files)
+- IntelliSense support in IDEs
+- Validation at startup
+- Clear separation of concerns
 
-```bash
-# Environment URL
-DATAVERSE_URL=https://orgXXXXXX.crm.dynamics.com/
+### Configuration Properties
 
-# Service Principal (for automation)
-SP_APPLICATION_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-SP_CLIENT_SECRET=your-client-secret
-SP_TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-```
+| Property | Purpose |
+|----------|---------|
+| `Dataverse:Url` | Environment URL (inherited by all connections) |
+| `Dataverse:Connections:N:Name` | Connection identifier for logging |
+| `Dataverse:Connections:N:ClientId` | Azure AD App Registration ID |
+| `Dataverse:Connections:N:ClientSecret` | Client secret (development) |
+| `Dataverse:Connections:N:ClientSecretEnvironmentVariable` | Env var name for secret (production) |
 
-### Step 2: Build the Connection String
+---
 
-Dataverse connection strings use this format for Service Principal authentication:
+## Setting Up User Secrets
 
-```
-AuthType=ClientSecret;Url={DATAVERSE_URL};ClientId={SP_APPLICATION_ID};ClientSecret={SP_CLIENT_SECRET}
-```
+### Step 1: Gather Your Credentials
 
-Using values from `.env.dev`:
+You need the following from your Azure AD App Registration:
 
-```
-AuthType=ClientSecret;Url=https://orgXXXXXX.crm.dynamics.com;ClientId=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx;ClientSecret=your-client-secret
-```
+| Value | Where to Find |
+|-------|---------------|
+| Dataverse URL | Power Platform Admin Center > Environments > Your Env > Environment URL |
+| Client ID | Azure Portal > App Registrations > Your App > Application (client) ID |
+| Client Secret | Azure Portal > App Registrations > Your App > Certificates & secrets |
 
-### Step 3: Initialize User Secrets
+### Step 2: Configure User Secrets
 
 Navigate to the project directory and set the secrets:
 
-```bash
+```powershell
 cd src/Console/PPDS.Dataverse.Demo
 
-# Set the connection name
-dotnet user-secrets set "Dataverse:Connections:0:Name" "Primary"
+# Set the Dataverse environment URL
+dotnet user-secrets set "Dataverse:Url" "https://yourorg.crm.dynamics.com"
 
-# Set the connection string (use your actual values from .env.dev)
-dotnet user-secrets set "Dataverse:Connections:0:ConnectionString" "AuthType=ClientSecret;Url=https://orgXXXXXX.crm.dynamics.com;ClientId=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx;ClientSecret=your-client-secret"
+# Set the App Registration credentials
+dotnet user-secrets set "Dataverse:Connections:0:ClientId" "00000000-0000-0000-0000-000000000000"
+dotnet user-secrets set "Dataverse:Connections:0:ClientSecret" "your-client-secret-value"
 ```
 
-### Step 4: Verify Secrets
+### Step 3: Verify Secrets
 
 List the configured secrets:
 
-```bash
+```powershell
 dotnet user-secrets list
 ```
 
 Expected output:
 
 ```
-Dataverse:Connections:0:ConnectionString = AuthType=ClientSecret;Url=...
-Dataverse:Connections:0:Name = Primary
+Dataverse:Url = https://yourorg.crm.dynamics.com
+Dataverse:Connections:0:ClientId = 00000000-0000-0000-0000-000000000000
+Dataverse:Connections:0:ClientSecret = ****
 ```
 
 ---
@@ -106,12 +110,13 @@ Dataverse:Connections:0:Name = Primary
 
 Once secrets are configured, run the demo:
 
-```bash
+```powershell
 # From repository root
-dotnet run --project src/Console/PPDS.Dataverse.Demo
+dotnet run --project src/Console/PPDS.Dataverse.Demo -- whoami
 
-# Or with explicit environment
-DOTNET_ENVIRONMENT=Development dotnet run --project src/Console/PPDS.Dataverse.Demo
+# Or from project directory
+cd src/Console/PPDS.Dataverse.Demo
+dotnet run -- whoami
 ```
 
 Expected output:
@@ -144,7 +149,7 @@ Pool Statistics:
 
 `Host.CreateDefaultBuilder()` automatically loads configuration from multiple sources (in order of precedence):
 
-1. `appsettings.json` (lowest priority)
+1. `appsettings.json` (lowest priority - structure and placeholders)
 2. `appsettings.{Environment}.json`
 3. **User Secrets** (when `DOTNET_ENVIRONMENT=Development`)
 4. Environment variables (highest priority)
@@ -179,18 +184,22 @@ This binds the `Dataverse` section from configuration to `DataverseOptions`:
 ```json
 {
   "Dataverse": {
+    "Url": "https://yourorg.crm.dynamics.com",
     "Connections": [
       {
         "Name": "Primary",
-        "ConnectionString": "AuthType=ClientSecret;..."
+        "ClientId": "00000000-0000-0000-0000-000000000000"
       }
     ],
     "Pool": {
-      "MaxPoolSize": 50
+      "MinPoolSize": 1,
+      "DisableAffinityCookie": true
     }
   }
 }
 ```
+
+The `ClientSecret` comes from User Secrets, not `appsettings.json`.
 
 ---
 
@@ -201,13 +210,13 @@ This binds the `Dataverse` section from configuration to `DataverseOptions`:
 User secrets are not configured or not being loaded.
 
 **Check 1:** Verify secrets exist
-```bash
+```powershell
 dotnet user-secrets list
 ```
 
 **Check 2:** Verify environment is Development
-```bash
-echo $DOTNET_ENVIRONMENT  # Should be "Development"
+```powershell
+echo $env:DOTNET_ENVIRONMENT  # Should be "Development" or not set
 ```
 
 **Check 3:** Verify UserSecretsId in .csproj
@@ -217,11 +226,11 @@ echo $DOTNET_ENVIRONMENT  # Should be "Development"
 
 ### "Failed to connect to Dataverse"
 
-Connection string is invalid or credentials are incorrect.
+Credentials are invalid or Service Principal lacks access.
 
-**Check 1:** Verify connection string format
+**Check 1:** Verify URL format
 ```
-AuthType=ClientSecret;Url=https://org.crm.dynamics.com;ClientId=xxx;ClientSecret=xxx
+https://yourorg.crm.dynamics.com  (no trailing slash)
 ```
 
 **Check 2:** Verify Service Principal has access
@@ -229,43 +238,108 @@ AuthType=ClientSecret;Url=https://org.crm.dynamics.com;ClientId=xxx;ClientSecret
 - Must have System Administrator or appropriate security role
 
 **Check 3:** Test credentials with PAC CLI
-```bash
-pac auth create --name test \
-  --applicationId <CLIENT_ID> \
-  --clientSecret <CLIENT_SECRET> \
-  --tenant <TENANT_ID> \
-  --url <DATAVERSE_URL>
+```powershell
+pac auth create --name test `
+  --applicationId YOUR_CLIENT_ID `
+  --clientSecret YOUR_CLIENT_SECRET `
+  --tenant YOUR_TENANT_ID `
+  --environment YOUR_DATAVERSE_URL
 
 pac org who  # Should show org details
 ```
 
 ### Clearing and Resetting Secrets
 
-```bash
+```powershell
 # Remove all secrets for this project
 dotnet user-secrets clear
 
 # Remove a specific secret
-dotnet user-secrets remove "Dataverse:Connections:0:ConnectionString"
+dotnet user-secrets remove "Dataverse:Connections:0:ClientSecret"
 ```
 
 ---
 
-## Alternative: Environment Variables
+## Production Configuration
 
-For CI/CD or containerized environments, use environment variables instead of user secrets:
+For production deployments, use environment variables instead of User Secrets.
 
-```bash
-# Bash/Linux/macOS
-export Dataverse__Connections__0__Name="Primary"
-export Dataverse__Connections__0__ConnectionString="AuthType=ClientSecret;..."
+### Using ClientSecretEnvironmentVariable
 
-# PowerShell
-$env:Dataverse__Connections__0__Name = "Primary"
-$env:Dataverse__Connections__0__ConnectionString = "AuthType=ClientSecret;..."
+Configure `appsettings.json` or environment-specific config:
+
+```json
+{
+  "Dataverse": {
+    "Url": "https://prod.crm.dynamics.com",
+    "Connections": [
+      {
+        "Name": "Primary",
+        "ClientId": "production-client-id",
+        "ClientSecretEnvironmentVariable": "DATAVERSE_SECRET"
+      }
+    ]
+  }
+}
 ```
 
-Note: Use double underscore (`__`) as the hierarchy separator in environment variables.
+The platform sets the environment variable:
+
+| Platform | How to Set |
+|----------|------------|
+| Azure App Service | Configuration > Application settings |
+| GitHub Actions | Repository secrets + `env:` in workflow |
+| Azure DevOps | Pipeline variables (secret) |
+| Docker | `-e DATAVERSE_SECRET=xxx` or docker-compose |
+| Kubernetes | Secret + environment variable in deployment |
+
+### Environment Variable Format
+
+For environment variables that override config, use double underscore as separator:
+
+```powershell
+# PowerShell
+$env:Dataverse__Url = "https://prod.crm.dynamics.com"
+$env:Dataverse__Connections__0__ClientId = "prod-client-id"
+
+# Bash
+export Dataverse__Url="https://prod.crm.dynamics.com"
+export Dataverse__Connections__0__ClientId="prod-client-id"
+```
+
+---
+
+## Multi-Environment Setup
+
+For cross-environment operations (migration, comparison), configure named environments:
+
+```powershell
+cd src/Console/PPDS.Dataverse.Demo
+
+# Pool connection (default for single-env commands)
+dotnet user-secrets set "Dataverse:Url" "https://dev.crm.dynamics.com"
+dotnet user-secrets set "Dataverse:Connections:0:ClientId" "dev-client-id"
+dotnet user-secrets set "Dataverse:Connections:0:ClientSecret" "dev-secret"
+
+# Dev environment (explicit)
+dotnet user-secrets set "Environments:Dev:Name" "DEV"
+dotnet user-secrets set "Environments:Dev:Url" "https://dev.crm.dynamics.com"
+dotnet user-secrets set "Environments:Dev:ClientId" "dev-client-id"
+dotnet user-secrets set "Environments:Dev:ClientSecret" "dev-secret"
+
+# QA environment
+dotnet user-secrets set "Environments:QA:Name" "QA"
+dotnet user-secrets set "Environments:QA:Url" "https://qa.crm.dynamics.com"
+dotnet user-secrets set "Environments:QA:ClientId" "qa-client-id"
+dotnet user-secrets set "Environments:QA:ClientSecret" "qa-secret"
+```
+
+Then use environment-specific commands:
+
+```powershell
+dotnet run -- clean --env QA
+dotnet run -- migrate-to-qa
+```
 
 ---
 
@@ -273,11 +347,12 @@ Note: Use double underscore (`__`) as the hierarchy separator in environment var
 
 | Practice | Reason |
 |----------|--------|
-| Never commit secrets to git | Use `.gitignore` for `.env.*`, `secrets.json` |
+| Never commit secrets to git | Use `.gitignore` for `secrets.json`, `.env.*` |
 | Use Service Principals | Not tied to user accounts, can be rotated |
 | Rotate secrets regularly | Limit blast radius of compromised credentials |
 | Use different credentials per environment | Dev credentials can't access Prod |
-| Store master credentials in `.env` files | Single source of truth, gitignored |
+| Use User Secrets for development | Microsoft-recommended secure local storage |
+| Use environment variables for production | Secrets never in config files |
 
 ---
 

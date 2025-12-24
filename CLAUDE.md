@@ -20,32 +20,39 @@
 
 ## 🔐 Dataverse Connection (User Secrets)
 
-The demo app uses .NET User Secrets for Dataverse credentials.
+The demo app uses .NET User Secrets for Dataverse credentials with **typed configuration**.
 
 | Property | Value |
 |----------|-------|
 | UserSecretsId | `ppds-dataverse-demo` |
 | Pool Config | `Dataverse:Connections:0` |
-| Environment Config | `Environments:{name}:ConnectionString` |
+| Environment Config | `Environments:{name}` |
 
 ### Configuration Structure
 
-The SDK uses **two separate config patterns** for different purposes:
+The SDK uses **typed configuration** instead of raw connection strings:
 
-1. **`Dataverse:Connections:*`** - For connection pool (load-balancing within ONE org)
-2. **`Environments:*`** - For explicit environment targeting (cross-env operations)
+| Property | Purpose | Example |
+|----------|---------|---------|
+| `Dataverse:Url` | Environment URL (shared by all connections) | `https://org.crm.dynamics.com` |
+| `Dataverse:Connections:N:ClientId` | Azure AD App Registration ID | `00000000-0000-0000-0000-000000000000` |
+| `Dataverse:Connections:N:ClientSecret` | Client secret (development only) | Via User Secrets |
+| `Dataverse:Connections:N:ClientSecretEnvironmentVariable` | Env var name for secret (production) | `DATAVERSE_SECRET` |
 
-> ⚠️ **Never put multiple orgs in `Dataverse:Connections`** - the pool will load-balance randomly across them. See [SDK README](../sdk/src/PPDS.Dataverse/README.md#multi-environment-scenarios).
+> ⚠️ **Never put multiple orgs in `Dataverse:Connections`** - the pool will load-balance randomly across them.
 
 ### Single Environment (Default)
 
-For most work, configure just the pool connection:
+For most work, configure the pool connection using User Secrets:
 
 ```powershell
 cd src/Console/PPDS.Dataverse.Demo
-dotnet user-secrets set "Dataverse:Connections:0:Name" "Primary"
-dotnet user-secrets set "Dataverse:Connections:0:ConnectionString" "AuthType=ClientSecret;Url=https://dev.crm.dynamics.com;ClientId=...;ClientSecret=..."
+dotnet user-secrets set "Dataverse:Url" "https://dev.crm.dynamics.com"
+dotnet user-secrets set "Dataverse:Connections:0:ClientId" "your-client-id"
+dotnet user-secrets set "Dataverse:Connections:0:ClientSecret" "your-client-secret"
 ```
+
+The `appsettings.json` contains placeholders showing the structure - User Secrets override these values.
 
 ### Multiple Environments (Cross-Env Migration)
 
@@ -55,16 +62,42 @@ For cross-environment operations, add environment-specific connections:
 cd src/Console/PPDS.Dataverse.Demo
 
 # Pool connection (used by whoami, demo-features, general queries)
-dotnet user-secrets set "Dataverse:Connections:0:Name" "Primary"
-dotnet user-secrets set "Dataverse:Connections:0:ConnectionString" "AuthType=...;Url=https://dev.crm.dynamics.com;..."
+dotnet user-secrets set "Dataverse:Url" "https://dev.crm.dynamics.com"
+dotnet user-secrets set "Dataverse:Connections:0:ClientId" "your-client-id"
+dotnet user-secrets set "Dataverse:Connections:0:ClientSecret" "your-client-secret"
 
 # Environment-specific connections (used by seed, clean, migrate-to-qa, load-geo-data)
 dotnet user-secrets set "Environments:Dev:Name" "DEV"
-dotnet user-secrets set "Environments:Dev:ConnectionString" "AuthType=...;Url=https://dev.crm.dynamics.com;..."
+dotnet user-secrets set "Environments:Dev:Url" "https://dev.crm.dynamics.com"
+dotnet user-secrets set "Environments:Dev:ClientId" "dev-client-id"
+dotnet user-secrets set "Environments:Dev:ClientSecret" "dev-client-secret"
 
 dotnet user-secrets set "Environments:QA:Name" "QA"
-dotnet user-secrets set "Environments:QA:ConnectionString" "AuthType=...;Url=https://qa.crm.dynamics.com;..."
+dotnet user-secrets set "Environments:QA:Url" "https://qa.crm.dynamics.com"
+dotnet user-secrets set "Environments:QA:ClientId" "qa-client-id"
+dotnet user-secrets set "Environments:QA:ClientSecret" "qa-client-secret"
 ```
+
+### Production Configuration
+
+For production, use environment variables instead of direct secrets:
+
+```json
+{
+  "Dataverse": {
+    "Url": "https://prod.crm.dynamics.com",
+    "Connections": [
+      {
+        "Name": "Primary",
+        "ClientId": "production-client-id",
+        "ClientSecretEnvironmentVariable": "DATAVERSE_SECRET"
+      }
+    ]
+  }
+}
+```
+
+The platform (Azure App Service, GitHub Actions, etc.) sets the `DATAVERSE_SECRET` environment variable.
 
 ### Check Current Connections
 
