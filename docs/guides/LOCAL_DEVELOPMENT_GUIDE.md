@@ -40,24 +40,54 @@ IConfiguration available in your app
 
 ---
 
-## Typed Configuration
+## Configuration Structure
 
-The SDK uses **typed configuration** instead of raw connection strings. This provides:
+All environments are configured under `Dataverse:Environments:*`. Each environment has its own URL and connections:
 
-- Better security (secrets separate from config files)
-- IntelliSense support in IDEs
-- Validation at startup
-- Clear separation of concerns
+```json
+{
+  "Dataverse": {
+    "Environments": {
+      "Dev": {
+        "Url": "https://dev.crm.dynamics.com",
+        "Connections": [
+          {
+            "Name": "Primary",
+            "ClientId": "00000000-0000-0000-0000-000000000000",
+            "ClientSecret": "from-user-secrets"
+          }
+        ]
+      },
+      "QA": {
+        "Url": "https://qa.crm.dynamics.com",
+        "Connections": [
+          {
+            "Name": "Primary",
+            "ClientId": "00000000-0000-0000-0000-000000000000",
+            "ClientSecret": "from-user-secrets"
+          }
+        ]
+      }
+    },
+    "DefaultEnvironment": "Dev",
+    "Pool": {
+      "MinPoolSize": 1,
+      "DisableAffinityCookie": true
+    }
+  }
+}
+```
 
 ### Configuration Properties
 
 | Property | Purpose |
 |----------|---------|
-| `Dataverse:Url` | Environment URL (inherited by all connections) |
-| `Dataverse:Connections:N:Name` | Connection identifier for logging |
-| `Dataverse:Connections:N:ClientId` | Azure AD App Registration ID |
-| `Dataverse:Connections:N:ClientSecret` | Client secret (development) |
-| `Dataverse:Connections:N:ClientSecretEnvironmentVariable` | Env var name for secret (production) |
+| `Dataverse:Environments:{env}:Url` | Environment URL |
+| `Dataverse:Environments:{env}:Connections:N:Name` | Connection identifier for logging |
+| `Dataverse:Environments:{env}:Connections:N:ClientId` | Azure AD App Registration ID |
+| `Dataverse:Environments:{env}:Connections:N:ClientSecret` | Client secret (development) |
+| `Dataverse:Environments:{env}:Connections:N:ClientSecretVariable` | Env var name for secret (production) |
+| `Dataverse:DefaultEnvironment` | Default environment when not specified |
 
 ---
 
@@ -80,12 +110,10 @@ Navigate to the project directory and set the secrets:
 ```powershell
 cd src/Console/PPDS.Dataverse.Demo
 
-# Set the Dataverse environment URL
-dotnet user-secrets set "Dataverse:Url" "https://yourorg.crm.dynamics.com"
-
-# Set the App Registration credentials
-dotnet user-secrets set "Dataverse:Connections:0:ClientId" "00000000-0000-0000-0000-000000000000"
-dotnet user-secrets set "Dataverse:Connections:0:ClientSecret" "your-client-secret-value"
+# Set the Dev environment
+dotnet user-secrets set "Dataverse:Environments:Dev:Url" "https://yourorg.crm.dynamics.com"
+dotnet user-secrets set "Dataverse:Environments:Dev:Connections:0:ClientId" "00000000-0000-0000-0000-000000000000"
+dotnet user-secrets set "Dataverse:Environments:Dev:Connections:0:ClientSecret" "your-client-secret-value"
 ```
 
 ### Step 3: Verify Secrets
@@ -99,9 +127,9 @@ dotnet user-secrets list
 Expected output:
 
 ```
-Dataverse:Url = https://yourorg.crm.dynamics.com
-Dataverse:Connections:0:ClientId = 00000000-0000-0000-0000-000000000000
-Dataverse:Connections:0:ClientSecret = ****
+Dataverse:Environments:Dev:Url = https://yourorg.crm.dynamics.com
+Dataverse:Environments:Dev:Connections:0:ClientId = 00000000-0000-0000-0000-000000000000
+Dataverse:Environments:Dev:Connections:0:ClientSecret = ****
 ```
 
 ---
@@ -122,11 +150,9 @@ dotnet run -- whoami
 Expected output:
 
 ```
-PPDS.Dataverse Connection Pool Demo
-====================================
+Testing Dataverse Connectivity
+==============================
 
-info: PPDS.Dataverse.Pooling.DataverseConnectionPool[0]
-      DataverseConnectionPool initialized. Connections: 1, MaxPoolSize: 50, Strategy: ThrottleAware
 Connecting to Dataverse...
 
 WhoAmI Result:
@@ -173,33 +199,14 @@ The `UserSecretsId` is defined in the project's `.csproj` file:
 
 ### Configuration Binding
 
-The SDK uses the standard .NET configuration pattern:
+The SDK uses environment-specific pool creation:
 
 ```csharp
-services.AddDataverseConnectionPool(context.Configuration);
+// Create pool for specific environment
+services.AddDataverseConnectionPool(context.Configuration, environment: "Dev");
 ```
 
-This binds the `Dataverse` section from configuration to `DataverseOptions`:
-
-```json
-{
-  "Dataverse": {
-    "Url": "https://yourorg.crm.dynamics.com",
-    "Connections": [
-      {
-        "Name": "Primary",
-        "ClientId": "00000000-0000-0000-0000-000000000000"
-      }
-    ],
-    "Pool": {
-      "MinPoolSize": 1,
-      "DisableAffinityCookie": true
-    }
-  }
-}
-```
-
-The `ClientSecret` comes from User Secrets, not `appsettings.json`.
+This binds configuration from `Dataverse:Environments:Dev:*`.
 
 ---
 
@@ -222,6 +229,22 @@ echo $env:DOTNET_ENVIRONMENT  # Should be "Development" or not set
 **Check 3:** Verify UserSecretsId in .csproj
 ```xml
 <UserSecretsId>ppds-dataverse-demo</UserSecretsId>
+```
+
+### "Environment 'Dev' not configured"
+
+The Dev environment configuration is missing.
+
+**Check:** Verify the full path in user secrets:
+```powershell
+dotnet user-secrets list | findstr "Dev"
+```
+
+Should show:
+```
+Dataverse:Environments:Dev:Url = ...
+Dataverse:Environments:Dev:Connections:0:ClientId = ...
+Dataverse:Environments:Dev:Connections:0:ClientSecret = ...
 ```
 
 ### "Failed to connect to Dataverse"
@@ -255,7 +278,35 @@ pac org who  # Should show org details
 dotnet user-secrets clear
 
 # Remove a specific secret
-dotnet user-secrets remove "Dataverse:Connections:0:ClientSecret"
+dotnet user-secrets remove "Dataverse:Environments:Dev:Connections:0:ClientSecret"
+```
+
+---
+
+## Multi-Environment Setup
+
+For cross-environment operations (migration, comparison), configure multiple environments:
+
+```powershell
+cd src/Console/PPDS.Dataverse.Demo
+
+# Dev environment
+dotnet user-secrets set "Dataverse:Environments:Dev:Url" "https://dev.crm.dynamics.com"
+dotnet user-secrets set "Dataverse:Environments:Dev:Connections:0:ClientId" "dev-client-id"
+dotnet user-secrets set "Dataverse:Environments:Dev:Connections:0:ClientSecret" "dev-secret"
+
+# QA environment
+dotnet user-secrets set "Dataverse:Environments:QA:Url" "https://qa.crm.dynamics.com"
+dotnet user-secrets set "Dataverse:Environments:QA:Connections:0:ClientId" "qa-client-id"
+dotnet user-secrets set "Dataverse:Environments:QA:Connections:0:ClientSecret" "qa-secret"
+```
+
+Then use environment-specific commands:
+
+```powershell
+dotnet run -- clean --env QA
+dotnet run -- migrate-to-qa
+dotnet run -- generate-user-mapping
 ```
 
 ---
@@ -264,21 +315,25 @@ dotnet user-secrets remove "Dataverse:Connections:0:ClientSecret"
 
 For production deployments, use environment variables instead of User Secrets.
 
-### Using ClientSecretEnvironmentVariable
+### Using ClientSecretVariable
 
 Configure `appsettings.json` or environment-specific config:
 
 ```json
 {
   "Dataverse": {
-    "Url": "https://prod.crm.dynamics.com",
-    "Connections": [
-      {
-        "Name": "Primary",
-        "ClientId": "production-client-id",
-        "ClientSecretEnvironmentVariable": "DATAVERSE_SECRET"
+    "Environments": {
+      "Prod": {
+        "Url": "https://prod.crm.dynamics.com",
+        "Connections": [
+          {
+            "Name": "Primary",
+            "ClientId": "production-client-id",
+            "ClientSecretVariable": "DATAVERSE_SECRET"
+          }
+        ]
       }
-    ]
+    }
   }
 }
 ```
@@ -299,46 +354,12 @@ For environment variables that override config, use double underscore as separat
 
 ```powershell
 # PowerShell
-$env:Dataverse__Url = "https://prod.crm.dynamics.com"
-$env:Dataverse__Connections__0__ClientId = "prod-client-id"
+$env:Dataverse__Environments__Dev__Url = "https://dev.crm.dynamics.com"
+$env:Dataverse__Environments__Dev__Connections__0__ClientId = "client-id"
 
 # Bash
-export Dataverse__Url="https://prod.crm.dynamics.com"
-export Dataverse__Connections__0__ClientId="prod-client-id"
-```
-
----
-
-## Multi-Environment Setup
-
-For cross-environment operations (migration, comparison), configure named environments:
-
-```powershell
-cd src/Console/PPDS.Dataverse.Demo
-
-# Pool connection (default for single-env commands)
-dotnet user-secrets set "Dataverse:Url" "https://dev.crm.dynamics.com"
-dotnet user-secrets set "Dataverse:Connections:0:ClientId" "dev-client-id"
-dotnet user-secrets set "Dataverse:Connections:0:ClientSecret" "dev-secret"
-
-# Dev environment (explicit)
-dotnet user-secrets set "Environments:Dev:Name" "DEV"
-dotnet user-secrets set "Environments:Dev:Url" "https://dev.crm.dynamics.com"
-dotnet user-secrets set "Environments:Dev:ClientId" "dev-client-id"
-dotnet user-secrets set "Environments:Dev:ClientSecret" "dev-secret"
-
-# QA environment
-dotnet user-secrets set "Environments:QA:Name" "QA"
-dotnet user-secrets set "Environments:QA:Url" "https://qa.crm.dynamics.com"
-dotnet user-secrets set "Environments:QA:ClientId" "qa-client-id"
-dotnet user-secrets set "Environments:QA:ClientSecret" "qa-secret"
-```
-
-Then use environment-specific commands:
-
-```powershell
-dotnet run -- clean --env QA
-dotnet run -- migrate-to-qa
+export Dataverse__Environments__Dev__Url="https://dev.crm.dynamics.com"
+export Dataverse__Environments__Dev__Connections__0__ClientId="client-id"
 ```
 
 ---

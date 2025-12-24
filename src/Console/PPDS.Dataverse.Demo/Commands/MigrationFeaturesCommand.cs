@@ -68,13 +68,13 @@ public static class MigrationFeaturesCommand
             return 1;
         }
 
-        using var host = CommandBase.CreateHost([]);
+        using var host = CommandBase.CreateHost();
         var config = host.Services.GetRequiredService<IConfiguration>();
-        var connectionString = config["Dataverse:Connections:0:ConnectionString"];
+        var (connectionString, envName) = CommandBase.BuildConnectionString(config, "Dev");
 
         if (string.IsNullOrEmpty(connectionString))
         {
-            CommandBase.WriteError("Connection string not found in configuration");
+            CommandBase.WriteError("Dev environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
         }
 

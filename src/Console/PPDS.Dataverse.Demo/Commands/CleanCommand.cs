@@ -44,14 +44,15 @@ public static class CleanCommand
         Console.WriteLine("====================");
         Console.WriteLine();
 
-        using var host = CommandBase.CreateHost([]);
+        var targetEnv = environment ?? "Dev";
+        using var host = CommandBase.CreateHost(targetEnv);
         var config = host.Services.GetRequiredService<IConfiguration>();
 
-        // Resolve connection string based on environment parameter
-        var (connectionString, envName) = CommandBase.ResolveEnvironmentByNameOrIndex(config, environment);
+        // Build connection string for the target environment
+        var (connectionString, envName) = CommandBase.BuildConnectionString(config, targetEnv);
         if (string.IsNullOrEmpty(connectionString))
         {
-            CommandBase.WriteError($"Connection not found for environment: {environment ?? "Dev"}. Configure Environments:{environment ?? "Dev"}:ConnectionString in user-secrets.");
+            CommandBase.WriteError($"Environment '{targetEnv}' not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
         }
 

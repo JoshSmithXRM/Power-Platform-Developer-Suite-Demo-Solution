@@ -5,7 +5,6 @@ using System.Net.Http;
 using CsvHelper;
 using CsvHelper.Configuration;
 using CsvHelper.Configuration.Attributes;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
@@ -87,18 +86,14 @@ public static class LoadGeoDataCommand
             Console.WriteLine();
         }
 
-        // Get configuration
-        using var configHost = CommandBase.CreateHost([]);
-        var config = configHost.Services.GetRequiredService<IConfiguration>();
-
-        // Create host with SDK services - reads Dataverse:Connections:* for pooling
-        using var host = CommandBase.CreateHostForBulkOperations(config, parallelism, verbose);
+        // Create host with SDK services for bulk operations
+        using var host = CommandBase.CreateHostForBulkOperations(environment: null, parallelism, verbose);
         var pool = host.Services.GetRequiredService<IDataverseConnectionPool>();
         var bulkExecutor = host.Services.GetRequiredService<IBulkOperationExecutor>();
 
         if (!pool.IsEnabled)
         {
-            CommandBase.WriteError("Connection pool not configured. Configure Dataverse:Connections:* in user-secrets.");
+            CommandBase.WriteError("Connection pool not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
         }
 

@@ -26,7 +26,7 @@ public static class WhoAmICommand
         Console.WriteLine("==============================");
         Console.WriteLine();
 
-        using var host = CommandBase.CreateHost(args);
+        using var host = CommandBase.CreateHost();
         var pool = CommandBase.GetConnectionPool(host);
 
         if (pool == null)

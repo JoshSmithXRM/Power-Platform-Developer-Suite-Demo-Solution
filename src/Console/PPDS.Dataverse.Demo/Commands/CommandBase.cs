@@ -13,33 +13,32 @@ namespace PPDS.Dataverse.Demo.Commands;
 public abstract class CommandBase
 {
     /// <summary>
-    /// Creates and configures the host with Dataverse connection pool.
+    /// Creates and configures the host with Dataverse connection pool for a specific environment.
     /// </summary>
-    public static IHost CreateHost(string[] args)
+    /// <param name="environment">Environment name (e.g., "Dev", "QA"). Uses DefaultEnvironment if not specified.</param>
+    public static IHost CreateHost(string? environment = null)
     {
-        return Host.CreateDefaultBuilder(args)
+        return Host.CreateDefaultBuilder([])
             .ConfigureServices((context, services) =>
             {
-                services.AddDataverseConnectionPool(context.Configuration);
+                services.AddDataverseConnectionPool(context.Configuration, environment: environment);
             })
             .Build();
     }
 
     /// <summary>
-    /// Creates a host configured for bulk operations using connections from Dataverse:Connections:* config.
-    /// Supports multiple service principals for connection pooling and quota multiplying.
+    /// Creates a host configured for bulk operations for a specific environment.
     /// </summary>
-    /// <param name="config">The configuration instance containing Dataverse:Connections:* settings.</param>
+    /// <param name="environment">Environment name (e.g., "Dev", "QA"). Uses DefaultEnvironment if not specified.</param>
     /// <param name="parallelism">Optional max parallel batches. If null, uses SDK default.</param>
     /// <param name="verbose">Enable debug-level logging for PPDS.Dataverse namespace.</param>
-    public static IHost CreateHostForBulkOperations(IConfiguration config, int? parallelism = null, bool verbose = false)
+    public static IHost CreateHostForBulkOperations(string? environment = null, int? parallelism = null, bool verbose = false)
     {
         return Host.CreateDefaultBuilder([])
             .ConfigureLogging(logging =>
             {
                 if (verbose)
                 {
-                    // Enable debug logging for PPDS.Dataverse namespace
                     logging.AddFilter("PPDS.Dataverse", LogLevel.Debug);
                     logging.AddSimpleConsole(options =>
                     {
@@ -50,10 +49,9 @@ public abstract class CommandBase
             })
             .ConfigureServices((context, services) =>
             {
-                // Read connections from Dataverse:Connections:* config section
-                services.AddDataverseConnectionPool(config);
+                services.AddDataverseConnectionPool(context.Configuration, environment: environment);
 
-                // Apply overrides (SDK defaults to MaxPoolSize=50)
+                // Apply overrides
                 services.Configure<DataverseOptions>(options =>
                 {
                     options.Pool.DisableAffinityCookie = true;
@@ -83,9 +81,9 @@ public abstract class CommandBase
             Console.WriteLine();
             Console.ForegroundColor = ConsoleColor.DarkGray;
             Console.WriteLine("  cd src/Console/PPDS.Dataverse.Demo");
-            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Url\" \"https://YOUR-ORG.crm.dynamics.com\"");
-            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Connections:0:ClientId\" \"your-client-id\"");
-            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Connections:0:ClientSecret\" \"your-client-secret\"");
+            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Environments:Dev:Url\" \"https://YOUR-ORG.crm.dynamics.com\"");
+            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Environments:Dev:Connections:0:ClientId\" \"your-client-id\"");
+            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Environments:Dev:Connections:0:ClientSecret\" \"your-client-secret\"");
             Console.ResetColor();
             Console.WriteLine();
             Console.WriteLine("See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md for details.");
@@ -127,72 +125,48 @@ public abstract class CommandBase
     }
 
     /// <summary>
-    /// Resolves a connection string for a specific environment.
-    /// Looks in Environments:{envName}:ConnectionString first, then falls back to pool config.
+    /// Builds a connection string from environment configuration.
+    /// Used by commands that need to pass connection strings to external tools (e.g., CLI).
     /// </summary>
     /// <param name="config">The configuration instance.</param>
-    /// <param name="envName">Environment name (e.g., "Dev", "QA"). If null, uses "Dev".</param>
-    /// <returns>Tuple of (connectionString, displayName). ConnectionString is null if not found.</returns>
-    public static (string? ConnectionString, string DisplayName) ResolveEnvironment(
+    /// <param name="environment">Environment name (e.g., "Dev", "QA").</param>
+    /// <returns>Tuple of (connectionString, displayName). ConnectionString is null if config is incomplete.</returns>
+    public static (string? ConnectionString, string DisplayName) BuildConnectionString(
         IConfiguration config,
-        string? envName = null)
+        string environment)
     {
-        envName ??= "Dev";
-
-        // Try Environments:{name}:ConnectionString first
-        var connectionString = config[$"Environments:{envName}:ConnectionString"];
-        var displayName = config[$"Environments:{envName}:Name"] ?? envName;
-
-        if (!string.IsNullOrEmpty(connectionString))
+        var envSection = config.GetSection($"Dataverse:Environments:{environment}");
+        if (!envSection.Exists())
         {
-            return (connectionString, displayName);
+            return (null, environment);
         }
 
-        // Fall back to Dataverse:Connections:0 for backwards compatibility
-        // Only if envName is "Dev" or default
-        if (envName.Equals("Dev", StringComparison.OrdinalIgnoreCase))
-        {
-            connectionString = config["Dataverse:Connections:0:ConnectionString"];
-            displayName = config["Dataverse:Connections:0:Name"] ?? "Primary";
+        var displayName = envSection["Name"] ?? environment;
+        var url = envSection["Url"];
+        var clientId = envSection["Connections:0:ClientId"];
+        var clientSecret = envSection["Connections:0:ClientSecret"];
 
-            if (!string.IsNullOrEmpty(connectionString))
-            {
-                return (connectionString, displayName);
-            }
+        // Check for environment variable-based secret
+        var clientSecretVariable = envSection["Connections:0:ClientSecretVariable"];
+        if (!string.IsNullOrEmpty(clientSecretVariable) && string.IsNullOrEmpty(clientSecret))
+        {
+            clientSecret = Environment.GetEnvironmentVariable(clientSecretVariable);
         }
 
-        return (null, envName);
+        if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
+        {
+            return (null, displayName);
+        }
+
+        var connectionString = $"AuthType=ClientSecret;Url={url};ClientId={clientId};ClientSecret={clientSecret}";
+        return (connectionString, displayName);
     }
 
     /// <summary>
-    /// Resolves connection for environment by name or index.
-    /// Supports: "Dev", "QA", "0", "1", etc.
+    /// Gets the environment URL from configuration.
     /// </summary>
-    public static (string? ConnectionString, string DisplayName) ResolveEnvironmentByNameOrIndex(
-        IConfiguration config,
-        string? environment)
+    public static string? GetEnvironmentUrl(IConfiguration config, string environment)
     {
-        // Default to Dev
-        if (string.IsNullOrEmpty(environment))
-        {
-            return ResolveEnvironment(config, "Dev");
-        }
-
-        // Try as environment name first (Dev, QA, Prod, etc.)
-        var (connStr, name) = ResolveEnvironment(config, environment);
-        if (!string.IsNullOrEmpty(connStr))
-        {
-            return (connStr, name);
-        }
-
-        // Try as index (for backwards compatibility)
-        if (int.TryParse(environment, out var index))
-        {
-            connStr = config[$"Dataverse:Connections:{index}:ConnectionString"];
-            name = config[$"Dataverse:Connections:{index}:Name"] ?? $"Connection {index}";
-            return (connStr, name);
-        }
-
-        return (null, environment);
+        return config[$"Dataverse:Environments:{environment}:Url"];
     }
 }

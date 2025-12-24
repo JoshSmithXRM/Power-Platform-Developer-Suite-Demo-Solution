@@ -25,57 +25,69 @@ The demo app uses .NET User Secrets for Dataverse credentials with **typed confi
 | Property | Value |
 |----------|-------|
 | UserSecretsId | `ppds-dataverse-demo` |
-| Pool Config | `Dataverse:Connections:0` |
-| Environment Config | `Environments:{name}` |
+| Config Section | `Dataverse:Environments:{Name}` |
+| Default Environment | `Dataverse:DefaultEnvironment` |
 
 ### Configuration Structure
 
-The SDK uses **typed configuration** instead of raw connection strings:
+All environments live under `Dataverse:Environments:*`. Each environment has its own URL, connections, and uses shared pool settings:
 
-| Property | Purpose | Example |
-|----------|---------|---------|
-| `Dataverse:Url` | Environment URL (shared by all connections) | `https://org.crm.dynamics.com` |
-| `Dataverse:Connections:N:ClientId` | Azure AD App Registration ID | `00000000-0000-0000-0000-000000000000` |
-| `Dataverse:Connections:N:ClientSecret` | Client secret (development only) | Via User Secrets |
-| `Dataverse:Connections:N:ClientSecretEnvironmentVariable` | Env var name for secret (production) | `DATAVERSE_SECRET` |
-
-> ⚠️ **Never put multiple orgs in `Dataverse:Connections`** - the pool will load-balance randomly across them.
-
-### Single Environment (Default)
-
-For most work, configure the pool connection using User Secrets:
-
-```powershell
-cd src/Console/PPDS.Dataverse.Demo
-dotnet user-secrets set "Dataverse:Url" "https://dev.crm.dynamics.com"
-dotnet user-secrets set "Dataverse:Connections:0:ClientId" "your-client-id"
-dotnet user-secrets set "Dataverse:Connections:0:ClientSecret" "your-client-secret"
+```json
+{
+  "Dataverse": {
+    "Environments": {
+      "Dev": {
+        "Url": "https://dev.crm.dynamics.com",
+        "Connections": [{ "Name": "Primary", "ClientId": "...", "ClientSecret": "..." }]
+      },
+      "QA": {
+        "Url": "https://qa.crm.dynamics.com",
+        "Connections": [{ "Name": "Primary", "ClientId": "...", "ClientSecret": "..." }]
+      }
+    },
+    "DefaultEnvironment": "Dev",
+    "Pool": { "MinPoolSize": 1, "DisableAffinityCookie": true }
+  }
+}
 ```
 
-The `appsettings.json` contains placeholders showing the structure - User Secrets override these values.
+### Configuration Properties
 
-### Multiple Environments (Cross-Env Migration)
+| Property | Purpose |
+|----------|---------|
+| `Dataverse:Environments:{env}:Url` | Environment URL |
+| `Dataverse:Environments:{env}:Connections:N:ClientId` | Azure AD App Registration ID |
+| `Dataverse:Environments:{env}:Connections:N:ClientSecret` | Client secret (development) |
+| `Dataverse:Environments:{env}:Connections:N:ClientSecretVariable` | Env var name (production) |
+| `Dataverse:DefaultEnvironment` | Default environment for commands |
 
-For cross-environment operations, add environment-specific connections:
+### Single Environment Setup
+
+For most work, configure just the Dev environment:
+
+```powershell
+cd src/Console/PPDS.Dataverse.Demo
+dotnet user-secrets set "Dataverse:Environments:Dev:Url" "https://dev.crm.dynamics.com"
+dotnet user-secrets set "Dataverse:Environments:Dev:Connections:0:ClientId" "your-client-id"
+dotnet user-secrets set "Dataverse:Environments:Dev:Connections:0:ClientSecret" "your-client-secret"
+```
+
+### Multi-Environment Setup (Cross-Env Migration)
+
+For cross-environment operations, add both environments:
 
 ```powershell
 cd src/Console/PPDS.Dataverse.Demo
 
-# Pool connection (used by whoami, demo-features, general queries)
-dotnet user-secrets set "Dataverse:Url" "https://dev.crm.dynamics.com"
-dotnet user-secrets set "Dataverse:Connections:0:ClientId" "your-client-id"
-dotnet user-secrets set "Dataverse:Connections:0:ClientSecret" "your-client-secret"
+# Dev environment
+dotnet user-secrets set "Dataverse:Environments:Dev:Url" "https://dev.crm.dynamics.com"
+dotnet user-secrets set "Dataverse:Environments:Dev:Connections:0:ClientId" "dev-client-id"
+dotnet user-secrets set "Dataverse:Environments:Dev:Connections:0:ClientSecret" "dev-secret"
 
-# Environment-specific connections (used by seed, clean, migrate-to-qa, load-geo-data)
-dotnet user-secrets set "Environments:Dev:Name" "DEV"
-dotnet user-secrets set "Environments:Dev:Url" "https://dev.crm.dynamics.com"
-dotnet user-secrets set "Environments:Dev:ClientId" "dev-client-id"
-dotnet user-secrets set "Environments:Dev:ClientSecret" "dev-client-secret"
-
-dotnet user-secrets set "Environments:QA:Name" "QA"
-dotnet user-secrets set "Environments:QA:Url" "https://qa.crm.dynamics.com"
-dotnet user-secrets set "Environments:QA:ClientId" "qa-client-id"
-dotnet user-secrets set "Environments:QA:ClientSecret" "qa-client-secret"
+# QA environment
+dotnet user-secrets set "Dataverse:Environments:QA:Url" "https://qa.crm.dynamics.com"
+dotnet user-secrets set "Dataverse:Environments:QA:Connections:0:ClientId" "qa-client-id"
+dotnet user-secrets set "Dataverse:Environments:QA:Connections:0:ClientSecret" "qa-secret"
 ```
 
 ### Production Configuration
@@ -85,14 +97,14 @@ For production, use environment variables instead of direct secrets:
 ```json
 {
   "Dataverse": {
-    "Url": "https://prod.crm.dynamics.com",
-    "Connections": [
-      {
-        "Name": "Primary",
-        "ClientId": "production-client-id",
-        "ClientSecretEnvironmentVariable": "DATAVERSE_SECRET"
+    "Environments": {
+      "Prod": {
+        "Url": "https://prod.crm.dynamics.com",
+        "Connections": [
+          { "Name": "Primary", "ClientId": "...", "ClientSecretVariable": "DATAVERSE_SECRET" }
+        ]
       }
-    ]
+    }
   }
 }
 ```
@@ -107,19 +119,22 @@ dotnet user-secrets list --project src/Console/PPDS.Dataverse.Demo
 
 ### Command Connection Usage
 
-| Command | Connection Source | Why |
-|---------|-------------------|-----|
-| `whoami` | Pool (`Dataverse:Connections:0`) | General pool usage |
-| `demo-features` | Pool (`Dataverse:Connections:0`) | General pool usage |
-| `seed` | `Environments:Dev` | Must target specific env |
-| `clean` | `Environments:Dev` (default) | Must target specific env |
-| `clean --env QA` | `Environments:QA` | Explicit targeting |
-| `load-geo-data` | `Environments:Dev` (default) | Must target specific env |
-| `migrate-to-qa` | `Environments:Dev` + `Environments:QA` | Cross-env operation |
+| Command | Environment | Notes |
+|---------|-------------|-------|
+| `whoami` | DefaultEnvironment (Dev) | Uses connection pool |
+| `demo-features` | DefaultEnvironment (Dev) | Uses connection pool |
+| `seed` | Dev | Explicit environment |
+| `clean` | Dev (or `--env QA`) | Explicit environment |
+| `load-geo-data` | DefaultEnvironment | Uses connection pool |
+| `clean-geo-data` | DefaultEnvironment | Uses connection pool |
+| `migrate-to-qa` | Dev → QA | Cross-environment |
+| `generate-user-mapping` | Dev → QA | Cross-environment |
 
-### Why Two Config Sections?
+### Why This Structure?
 
-The pool is designed for **load-balancing within a single org** (multiple App Users = multiplied API quota). Commands that modify data need **explicit environment targeting** to avoid accidentally writing to the wrong org.
+1. **Single location** - All environments under `Dataverse:Environments:*`
+2. **No duplication** - Shared pool settings apply to all environments
+3. **Explicit targeting** - SDK creates pool per environment: `AddDataverseConnectionPool(config, environment: "Dev")`
 
 ---
 
@@ -254,7 +269,6 @@ public class AccountUpdatePlugin : PluginBase { }
 | Store `IPooledClient` in fields | Get per operation; dispose immediately with `await using` |
 | Hardcode parallelism values | Query `RecommendedDegreesOfParallelism` dynamically |
 | Set alternate key in both `KeyAttributes` AND `Attributes` | Causes "duplicate key" error on upsert |
-| Put multiple orgs in `Dataverse:Connections` | Pool load-balances randomly; use `Environments:*` instead |
 
 > **Cross-Repo Changes:** If a fix requires changes to `sdk/`, `tools/`, `extension/`, or `alm/`,
 > describe the proposed change and get approval first. Do NOT edit files in other repositories.

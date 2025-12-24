@@ -39,14 +39,14 @@ public static class SeedCommand
         Console.WriteLine("===================");
         Console.WriteLine();
 
-        // Get Dev environment connection directly (avoid pool which may route to wrong env)
-        using var host = CommandBase.CreateHost(args);
+        // Get Dev environment connection
+        using var host = CommandBase.CreateHost("Dev");
         var config = host.Services.GetRequiredService<IConfiguration>();
-        var (connectionString, envName) = CommandBase.ResolveEnvironment(config, "Dev");
+        var (connectionString, envName) = CommandBase.BuildConnectionString(config, "Dev");
 
         if (string.IsNullOrEmpty(connectionString))
         {
-            CommandBase.WriteError("Connection not found. Configure Environments:Dev:ConnectionString in user-secrets.");
+            CommandBase.WriteError("Dev environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
         }
 

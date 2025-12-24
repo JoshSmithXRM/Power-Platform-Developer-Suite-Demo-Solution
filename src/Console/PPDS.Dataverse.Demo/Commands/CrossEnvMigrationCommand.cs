@@ -77,26 +77,27 @@ public static class CrossEnvMigrationCommand
             return 1;
         }
 
-        using var host = CommandBase.CreateHost([]);
+        using var host = CommandBase.CreateHost();
         var config = host.Services.GetRequiredService<IConfiguration>();
 
         // Get both environment connection strings
-        var (devConnectionString, devName) = CommandBase.ResolveEnvironment(config, "Dev");
-        var (qaConnectionString, qaName) = CommandBase.ResolveEnvironment(config, "QA");
+        var (devConnectionString, devName) = CommandBase.BuildConnectionString(config, "Dev");
+        var (qaConnectionString, qaName) = CommandBase.BuildConnectionString(config, "QA");
 
         if (string.IsNullOrEmpty(devConnectionString))
         {
-            CommandBase.WriteError("Dev connection not found. Configure Environments:Dev:ConnectionString in user-secrets.");
+            CommandBase.WriteError("Dev environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
         }
 
         if (string.IsNullOrEmpty(qaConnectionString))
         {
-            CommandBase.WriteError("QA connection not found.");
+            CommandBase.WriteError("QA environment not configured.");
             Console.WriteLine();
-            Console.WriteLine("Set up QA connection:");
-            Console.WriteLine("  dotnet user-secrets set \"Environments:QA:Name\" \"QA\"");
-            Console.WriteLine("  dotnet user-secrets set \"Environments:QA:ConnectionString\" \"AuthType=...\"");
+            Console.WriteLine("Configure QA environment in User Secrets:");
+            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Environments:QA:Url\" \"https://qa.crm.dynamics.com\"");
+            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Environments:QA:Connections:0:ClientId\" \"...\"");
+            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Environments:QA:Connections:0:ClientSecret\" \"...\"");
             return 1;
         }
 

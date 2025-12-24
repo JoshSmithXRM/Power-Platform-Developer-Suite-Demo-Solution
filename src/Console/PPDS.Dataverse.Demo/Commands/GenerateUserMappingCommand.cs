@@ -46,21 +46,21 @@ public static class GenerateUserMappingCommand
         Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
         Console.WriteLine();
 
-        using var host = CommandBase.CreateHost([]);
+        using var host = CommandBase.CreateHost();
         var config = host.Services.GetRequiredService<IConfiguration>();
 
-        var (devConnectionString, devName) = CommandBase.ResolveEnvironment(config, "Dev");
-        var (qaConnectionString, qaName) = CommandBase.ResolveEnvironment(config, "QA");
+        var (devConnectionString, devName) = CommandBase.BuildConnectionString(config, "Dev");
+        var (qaConnectionString, qaName) = CommandBase.BuildConnectionString(config, "QA");
 
         if (string.IsNullOrEmpty(devConnectionString))
         {
-            CommandBase.WriteError("Dev connection not found. Configure Environments:Dev:ConnectionString in user-secrets.");
+            CommandBase.WriteError("Dev environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
         }
 
         if (string.IsNullOrEmpty(qaConnectionString))
         {
-            CommandBase.WriteError("QA connection not found. Configure Environments:QA:ConnectionString in user-secrets.");
+            CommandBase.WriteError("QA environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
         }
 
