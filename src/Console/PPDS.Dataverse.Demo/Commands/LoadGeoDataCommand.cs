@@ -212,7 +212,16 @@ public static class LoadGeoDataCommand
 
             Console.WriteLine();
             Console.WriteLine($"  ZIP code loading completed in {result.Duration.TotalSeconds:F2}s");
-            Console.WriteLine($"    Succeeded: {result.SuccessCount:N0}");
+
+            // Show created/updated breakdown if available
+            if (result.CreatedCount.HasValue && result.UpdatedCount.HasValue)
+            {
+                Console.WriteLine($"    Upserted: {result.SuccessCount:N0} ({result.CreatedCount:N0} created, {result.UpdatedCount:N0} updated)");
+            }
+            else
+            {
+                Console.WriteLine($"    Succeeded: {result.SuccessCount:N0}");
+            }
             Console.WriteLine($"    Failed: {result.FailureCount:N0}");
 
             if (result.FailureCount > 0)
@@ -233,7 +242,10 @@ public static class LoadGeoDataCommand
             Console.WriteLine($"    Throughput: {throughput:F1} records/second");
             Console.WriteLine();
 
-            PrintSummary(totalStopwatch, states.Count, result.SuccessCount, 0, result.FailureCount, skipped);
+            // Pass actual created/updated counts to summary
+            var createdCount = result.CreatedCount ?? result.SuccessCount;
+            var updatedCount = result.UpdatedCount ?? 0;
+            PrintSummary(totalStopwatch, states.Count, createdCount, updatedCount, result.FailureCount, skipped);
 
             return result.FailureCount > 0 ? 1 : 0;
         }

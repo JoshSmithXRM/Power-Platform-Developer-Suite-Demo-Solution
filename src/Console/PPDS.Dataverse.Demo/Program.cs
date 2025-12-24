@@ -20,6 +20,9 @@ rootCommand.AddCommand(GenerateUserMappingCommand.Create());
 rootCommand.AddCommand(CreateGeoSchemaCommand.Create());
 rootCommand.AddCommand(LoadGeoDataCommand.Create());
 rootCommand.AddCommand(CleanGeoDataCommand.Create());
+rootCommand.AddCommand(ExportGeoDataCommand.Create());
+rootCommand.AddCommand(ImportGeoDataCommand.Create());
+rootCommand.AddCommand(MigrateGeoDataCommand.Create());
 
 // Default behavior: show help if no command specified
 rootCommand.SetHandler(() =>
@@ -36,6 +39,9 @@ rootCommand.SetHandler(() =>
     Console.WriteLine("  create-geo-schema   Create geographic tables (state, city, zipcode)");
     Console.WriteLine("  load-geo-data       Download and load 42K US ZIP codes");
     Console.WriteLine("  clean-geo-data      Bulk delete geographic data");
+    Console.WriteLine("  export-geo-data     Export geo data to portable ZIP package");
+    Console.WriteLine("  import-geo-data     Import geo data from ZIP package");
+    Console.WriteLine("  migrate-geo-data    Full migration workflow (export + import + verify)");
     Console.WriteLine();
     Console.WriteLine("Migration Commands:");
     Console.WriteLine("  test-migration      End-to-end test of ppds-migrate CLI");

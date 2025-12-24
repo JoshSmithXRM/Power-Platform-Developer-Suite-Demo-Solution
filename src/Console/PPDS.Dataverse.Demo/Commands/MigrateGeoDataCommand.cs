@@ -1,0 +1,697 @@
+using System.CommandLine;
+using System.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Query;
+using PPDS.Dataverse.BulkOperations;
+using PPDS.Dataverse.Pooling;
+using PPDS.Dataverse.Progress;
+
+namespace PPDS.Dataverse.Demo.Commands;
+
+/// <summary>
+/// Full cross-environment migration workflow for geographic reference data.
+///
+/// This command orchestrates the complete migration workflow:
+///   1. export-geo-data: Generate schema + export to ZIP package
+///   2. import-geo-data: Import package to target environment
+///   3. Verify: Compare source and target counts
+///
+/// Supports two modes:
+/// - CLI Mode (default): Composes export-geo-data and import-geo-data commands
+/// - SDK Mode (--use-sdk): Direct bulk operations via IBulkOperationExecutor
+///
+/// No user mapping required - geo data is reference data without ownership.
+/// Alternate keys enable idempotent upsert across environments.
+///
+/// Usage:
+///   dotnet run -- migrate-geo-data --target QA
+///   dotnet run -- migrate-geo-data --source Dev --target Prod --clean-target
+///   dotnet run -- migrate-geo-data --target QA --use-sdk --parallelism 4
+/// </summary>
+public static class MigrateGeoDataCommand
+{
+    private static readonly string DataPath = Path.Combine(AppContext.BaseDirectory, "geo-export.zip");
+
+    public static Command Create()
+    {
+        var command = new Command("migrate-geo-data", "Migrate geographic data between environments");
+
+        var sourceOption = new Option<string>(
+            aliases: ["--source", "-s"],
+            getDefaultValue: () => "Dev",
+            description: "Source environment name");
+
+        var targetOption = new Option<string?>(
+            aliases: ["--target", "-t"],
+            description: "Target environment name (required for CLI mode)");
+
+        var dryRunOption = new Option<bool>(
+            "--dry-run",
+            "Export only, don't import to target");
+
+        var cleanTargetOption = new Option<bool>(
+            "--clean-target",
+            "Clean target environment before import");
+
+        var useSdkOption = new Option<bool>(
+            "--use-sdk",
+            "Use direct SDK instead of CLI (for SDK developers)");
+
+        var parallelismOption = new Option<int?>(
+            "--parallelism",
+            "Max parallel batches for SDK mode");
+
+        var verboseOption = new Option<bool>(
+            ["--verbose", "-v"],
+            "Show detailed output including CLI commands");
+
+        command.AddOption(sourceOption);
+        command.AddOption(targetOption);
+        command.AddOption(dryRunOption);
+        command.AddOption(cleanTargetOption);
+        command.AddOption(useSdkOption);
+        command.AddOption(parallelismOption);
+        command.AddOption(verboseOption);
+
+        command.SetHandler(async (string source, string? target, bool dryRun, bool cleanTarget, bool useSdk, int? parallelism, bool verbose) =>
+        {
+            Environment.ExitCode = await ExecuteAsync(source, target, dryRun, cleanTarget, useSdk, parallelism, verbose);
+        }, sourceOption, targetOption, dryRunOption, cleanTargetOption, useSdkOption, parallelismOption, verboseOption);
+
+        return command;
+    }
+
+    public static async Task<int> ExecuteAsync(
+        string source,
+        string? target,
+        bool dryRun,
+        bool cleanTarget,
+        bool useSdk,
+        int? parallelism = null,
+        bool verbose = false)
+    {
+        Console.WriteLine("+==============================================================+");
+        Console.WriteLine($"|       Geo Data Migration: {source} -> {target ?? "(dry-run)"}");
+        Console.WriteLine("+==============================================================+");
+        Console.WriteLine();
+
+        // Validate target is specified unless dry-run
+        if (!dryRun && string.IsNullOrEmpty(target))
+        {
+            CommandBase.WriteError("Target environment is required. Use --target <env> or --dry-run.");
+            return 1;
+        }
+
+        // Route to appropriate mode
+        if (useSdk)
+        {
+            return await ExecuteWithSdkAsync(source, target!, dryRun, cleanTarget, parallelism, verbose);
+        }
+        else
+        {
+            return await ExecuteWithCliAsync(source, target, dryRun, cleanTarget, verbose);
+        }
+    }
+
+    #region CLI Mode
+
+    /// <summary>
+    /// CLI mode orchestrates export-geo-data and import-geo-data commands.
+    /// This demonstrates command composition - building workflows from smaller pieces.
+    /// </summary>
+    private static async Task<int> ExecuteWithCliAsync(
+        string source,
+        string? target,
+        bool dryRun,
+        bool cleanTarget,
+        bool verbose)
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        Console.WriteLine("  Mode: CLI (Command Composition)");
+        Console.WriteLine("  Environments:");
+        Console.WriteLine($"    Source: {source}");
+        Console.WriteLine($"    Target: {target ?? "(dry-run)"}");
+        Console.WriteLine();
+
+        if (dryRun)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("  [DRY RUN] Will export only, no import");
+            Console.ResetColor();
+            Console.WriteLine();
+        }
+
+        // ===================================================================
+        // STEP 1: Export (calls export-geo-data)
+        // ===================================================================
+        Console.WriteLine("+-----------------------------------------------------------------+");
+        Console.WriteLine("| Step 1: Export from Source (export-geo-data)                   |");
+        Console.WriteLine("+-----------------------------------------------------------------+");
+        Console.WriteLine();
+
+        var exportResult = await ExportGeoDataCommand.ExecuteAsync(
+            outputPath: DataPath,
+            environment: source,
+            verbose: verbose);
+
+        if (exportResult != 0)
+        {
+            CommandBase.WriteError("Export step failed");
+            return 1;
+        }
+
+        Console.WriteLine();
+
+        if (dryRun)
+        {
+            Console.WriteLine("+==============================================================+");
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("|           DRY RUN COMPLETE - No import performed             |");
+            Console.ResetColor();
+            Console.WriteLine("+==============================================================+");
+            Console.WriteLine();
+            Console.WriteLine($"  Export file: {DataPath}");
+            Console.WriteLine();
+            Console.WriteLine("  To import manually:");
+            Console.WriteLine($"    dotnet run -- import-geo-data --data \"{DataPath}\" --env {target ?? "<TARGET>"}");
+            return 0;
+        }
+
+        // ===================================================================
+        // STEP 2: Import (calls import-geo-data)
+        // ===================================================================
+        Console.WriteLine("+-----------------------------------------------------------------+");
+        Console.WriteLine($"| Step 2: Import to Target (import-geo-data)                    |");
+        Console.WriteLine("+-----------------------------------------------------------------+");
+        Console.WriteLine();
+
+        var importResult = await ImportGeoDataCommand.ExecuteAsync(
+            dataPath: DataPath,
+            environment: target!,
+            cleanFirst: cleanTarget,
+            verbose: verbose);
+
+        if (importResult != 0)
+        {
+            CommandBase.WriteError("Import step failed");
+            return 1;
+        }
+
+        stopwatch.Stop();
+
+        Console.WriteLine();
+        Console.WriteLine("+==============================================================+");
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"|         MIGRATION COMPLETE: {source} -> {target}");
+        Console.ResetColor();
+        Console.WriteLine("+==============================================================+");
+        Console.WriteLine();
+        Console.WriteLine($"  Total time: {stopwatch.Elapsed.TotalSeconds:F2}s");
+
+        return 0;
+    }
+
+    #endregion
+
+    #region SDK Mode
+
+    private static async Task<int> ExecuteWithSdkAsync(
+        string source,
+        string target,
+        bool dryRun,
+        bool cleanTarget,
+        int? parallelism,
+        bool verbose)
+    {
+        Console.WriteLine("  Mode: SDK (Direct API)");
+        Console.WriteLine();
+
+        // Create hosts for both environments
+        using var sourceHost = CommandBase.CreateHostForBulkOperations(source, parallelism, verbose);
+        var sourcePool = sourceHost.Services.GetRequiredService<IDataverseConnectionPool>();
+        var sourceBulk = sourceHost.Services.GetRequiredService<IBulkOperationExecutor>();
+
+        if (!sourcePool.IsEnabled)
+        {
+            CommandBase.WriteError($"{source} environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
+            return 1;
+        }
+
+        Microsoft.Extensions.Hosting.IHost? targetHost = null;
+        IDataverseConnectionPool? targetPool = null;
+        IBulkOperationExecutor? targetBulk = null;
+
+        if (!dryRun)
+        {
+            targetHost = CommandBase.CreateHostForBulkOperations(target, parallelism, verbose);
+            targetPool = targetHost.Services.GetRequiredService<IDataverseConnectionPool>();
+            targetBulk = targetHost.Services.GetRequiredService<IBulkOperationExecutor>();
+
+            if (!targetPool.IsEnabled)
+            {
+                CommandBase.WriteError($"{target} environment not configured.");
+                targetHost.Dispose();
+                return 1;
+            }
+        }
+
+        try
+        {
+            Console.WriteLine("  Environments:");
+            Console.WriteLine($"    Source: {source}");
+            Console.WriteLine($"    Target: {(dryRun ? "(dry-run)" : target)}");
+            if (parallelism.HasValue)
+            {
+                Console.WriteLine($"    Parallelism: {parallelism.Value}");
+            }
+            Console.WriteLine();
+
+            var totalStopwatch = Stopwatch.StartNew();
+
+            // ===================================================================
+            // PHASE 1: Query Source Data
+            // ===================================================================
+            Console.WriteLine("+-----------------------------------------------------------------+");
+            Console.WriteLine("| Phase 1: Query Source Data                                      |");
+            Console.WriteLine("+-----------------------------------------------------------------+");
+
+            await using var sourceClient = await sourcePool.GetClientAsync();
+
+            Console.Write("  Querying states... ");
+            var states = await QueryAllEntitiesAsync(sourcePool, "ppds_state",
+                "ppds_stateid", "ppds_name", "ppds_abbreviation", "ppds_fipscode", "ppds_population");
+            Console.WriteLine($"{states.Count:N0} found");
+
+            Console.Write("  Querying cities... ");
+            var cities = await QueryAllEntitiesAsync(sourcePool, "ppds_city",
+                "ppds_cityid", "ppds_name", "ppds_stateid", "ppds_county",
+                "ppds_latitude", "ppds_longitude", "ppds_population");
+            Console.WriteLine($"{cities.Count:N0} found");
+
+            Console.Write("  Querying ZIP codes... ");
+            var zipCodes = await QueryAllEntitiesAsync(sourcePool, "ppds_zipcode",
+                "ppds_zipcodeid", "ppds_code", "ppds_stateid", "ppds_cityname",
+                "ppds_county", "ppds_latitude", "ppds_longitude", "ppds_population", "ppds_timezone");
+            Console.WriteLine($"{zipCodes.Count:N0} found");
+            Console.WriteLine();
+
+            if (states.Count == 0)
+            {
+                CommandBase.WriteError($"No geo data found in {source}. Run load-geo-data first.");
+                return 1;
+            }
+
+            if (dryRun)
+            {
+                Console.WriteLine("+==============================================================+");
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("|           DRY RUN COMPLETE - No import performed             |");
+                Console.ResetColor();
+                Console.WriteLine("+==============================================================+");
+                Console.WriteLine();
+                Console.WriteLine($"  Would import: {states.Count} states, {cities.Count} cities, {zipCodes.Count:N0} ZIP codes");
+                return 0;
+            }
+
+            // ===================================================================
+            // PHASE 2: Clean Target (optional)
+            // ===================================================================
+            if (cleanTarget)
+            {
+                Console.WriteLine("+-----------------------------------------------------------------+");
+                Console.WriteLine("| Phase 2: Clean Target                                           |");
+                Console.WriteLine("+-----------------------------------------------------------------+");
+
+                Console.WriteLine($"  Running clean-geo-data on {target}...");
+                var cleanResult = await CleanGeoDataCommand.ExecuteAsync(
+                    zipOnly: false,
+                    confirm: true,
+                    parallelism: parallelism,
+                    verbose: verbose,
+                    environment: target);
+
+                if (cleanResult != 0)
+                {
+                    CommandBase.WriteError("Clean target failed");
+                    return 1;
+                }
+                Console.WriteLine();
+            }
+
+            // ===================================================================
+            // PHASE 3: Import to Target
+            // ===================================================================
+            Console.WriteLine("+-----------------------------------------------------------------+");
+            Console.WriteLine($"| Phase {(cleanTarget ? "3" : "2")}: Import to {target}");
+            Console.WriteLine("+-----------------------------------------------------------------+");
+
+            // Build state abbreviation -> Entity map for lookup resolution
+            var stateAbbreviationMap = new Dictionary<string, Entity>();
+            foreach (var state in states)
+            {
+                var abbr = state.GetAttributeValue<string>("ppds_abbreviation");
+                if (!string.IsNullOrEmpty(abbr))
+                {
+                    stateAbbreviationMap[abbr] = state;
+                }
+            }
+
+            // Import states first (no dependencies)
+            Console.WriteLine("  Importing states...");
+            var stateEntities = states.Select(s =>
+            {
+                var entity = new Entity("ppds_state");
+                // Use alternate key for upsert
+                entity.KeyAttributes["ppds_abbreviation"] = s.GetAttributeValue<string>("ppds_abbreviation");
+                entity["ppds_name"] = s.GetAttributeValue<string>("ppds_name");
+                if (s.Contains("ppds_fipscode"))
+                    entity["ppds_fipscode"] = s.GetAttributeValue<string>("ppds_fipscode");
+                if (s.Contains("ppds_population"))
+                    entity["ppds_population"] = s.GetAttributeValue<int?>("ppds_population");
+                return entity;
+            }).ToList();
+
+            var stateProgress = CreateProgress("states");
+            var stateResult = await targetBulk!.UpsertMultipleAsync("ppds_state", stateEntities, progress: stateProgress);
+            PrintBulkResult("  States", stateResult);
+
+            // Query target states to get GUIDs for lookup resolution
+            Console.Write("  Querying target states for lookup resolution... ");
+            await using var targetClient = await targetPool!.GetClientAsync();
+            var targetStates = await QueryAllEntitiesAsync(targetPool, "ppds_state",
+                "ppds_stateid", "ppds_abbreviation");
+            var targetStateMap = targetStates.ToDictionary(
+                s => s.GetAttributeValue<string>("ppds_abbreviation") ?? "",
+                s => s.Id);
+            Console.WriteLine($"{targetStates.Count} found");
+
+            // Import cities (with state lookup resolution)
+            if (cities.Count > 0)
+            {
+                Console.WriteLine("  Importing cities...");
+                var cityEntities = new List<Entity>();
+                foreach (var city in cities)
+                {
+                    var stateRef = city.GetAttributeValue<EntityReference>("ppds_stateid");
+                    if (stateRef == null) continue;
+
+                    // Find source state abbreviation
+                    var sourceState = states.FirstOrDefault(s => s.Id == stateRef.Id);
+                    if (sourceState == null) continue;
+
+                    var abbr = sourceState.GetAttributeValue<string>("ppds_abbreviation");
+                    if (!targetStateMap.TryGetValue(abbr ?? "", out var targetStateId)) continue;
+
+                    var entity = new Entity("ppds_city");
+                    entity["ppds_name"] = city.GetAttributeValue<string>("ppds_name");
+                    entity["ppds_stateid"] = new EntityReference("ppds_state", targetStateId);
+                    if (city.Contains("ppds_county"))
+                        entity["ppds_county"] = city.GetAttributeValue<string>("ppds_county");
+                    if (city.Contains("ppds_latitude"))
+                        entity["ppds_latitude"] = city.GetAttributeValue<decimal?>("ppds_latitude");
+                    if (city.Contains("ppds_longitude"))
+                        entity["ppds_longitude"] = city.GetAttributeValue<decimal?>("ppds_longitude");
+                    if (city.Contains("ppds_population"))
+                        entity["ppds_population"] = city.GetAttributeValue<int?>("ppds_population");
+
+                    cityEntities.Add(entity);
+                }
+
+                var cityProgress = CreateProgress("cities");
+                var cityResult = await targetBulk.UpsertMultipleAsync("ppds_city", cityEntities, progress: cityProgress);
+                PrintBulkResult("  Cities", cityResult);
+            }
+
+            // Import ZIP codes (with state lookup resolution)
+            Console.WriteLine("  Importing ZIP codes...");
+            var zipEntities = new List<Entity>();
+            foreach (var zip in zipCodes)
+            {
+                var stateRef = zip.GetAttributeValue<EntityReference>("ppds_stateid");
+                if (stateRef == null) continue;
+
+                // Find source state abbreviation
+                var sourceState = states.FirstOrDefault(s => s.Id == stateRef.Id);
+                if (sourceState == null) continue;
+
+                var abbr = sourceState.GetAttributeValue<string>("ppds_abbreviation");
+                if (!targetStateMap.TryGetValue(abbr ?? "", out var targetStateId)) continue;
+
+                var entity = new Entity("ppds_zipcode");
+                // Use alternate key for upsert
+                entity.KeyAttributes["ppds_code"] = zip.GetAttributeValue<string>("ppds_code");
+                entity["ppds_stateid"] = new EntityReference("ppds_state", targetStateId);
+                if (zip.Contains("ppds_cityname"))
+                    entity["ppds_cityname"] = zip.GetAttributeValue<string>("ppds_cityname");
+                if (zip.Contains("ppds_county"))
+                    entity["ppds_county"] = zip.GetAttributeValue<string>("ppds_county");
+                if (zip.Contains("ppds_latitude"))
+                    entity["ppds_latitude"] = zip.GetAttributeValue<decimal?>("ppds_latitude");
+                if (zip.Contains("ppds_longitude"))
+                    entity["ppds_longitude"] = zip.GetAttributeValue<decimal?>("ppds_longitude");
+                if (zip.Contains("ppds_population"))
+                    entity["ppds_population"] = zip.GetAttributeValue<int?>("ppds_population");
+                if (zip.Contains("ppds_timezone"))
+                    entity["ppds_timezone"] = zip.GetAttributeValue<string>("ppds_timezone");
+
+                zipEntities.Add(entity);
+            }
+
+            var zipProgress = CreateProgress("ZIP codes");
+            var zipResult = await targetBulk.UpsertMultipleAsync("ppds_zipcode", zipEntities, progress: zipProgress);
+            PrintBulkResult("  ZIP codes", zipResult);
+            Console.WriteLine();
+
+            // ===================================================================
+            // PHASE 4: Verify Target
+            // ===================================================================
+            Console.WriteLine("+-----------------------------------------------------------------+");
+            Console.WriteLine($"| Phase {(cleanTarget ? "4" : "3")}: Verify {target}");
+            Console.WriteLine("+-----------------------------------------------------------------+");
+
+            var targetSummary = await QueryGeoSummary(targetClient);
+            PrintGeoSummary($"  {target}", targetSummary);
+            Console.WriteLine();
+
+            // Compare
+            var sourceSummary = new GeoSummary
+            {
+                StateCount = states.Count,
+                CityCount = cities.Count,
+                ZipCodeCount = zipCodes.Count
+            };
+
+            Console.WriteLine($"  Comparison ({source} -> {target}):");
+            var passed = true;
+
+            var stateMatch = sourceSummary.StateCount == targetSummary.StateCount;
+            Console.Write($"    States: {sourceSummary.StateCount} -> {targetSummary.StateCount} ");
+            WritePassFail(stateMatch);
+            passed &= stateMatch;
+
+            var cityMatch = sourceSummary.CityCount == targetSummary.CityCount;
+            Console.Write($"    Cities: {sourceSummary.CityCount} -> {targetSummary.CityCount} ");
+            WritePassFail(cityMatch);
+            passed &= cityMatch;
+
+            var zipMatch = sourceSummary.ZipCodeCount == targetSummary.ZipCodeCount;
+            Console.Write($"    ZIP Codes: {sourceSummary.ZipCodeCount:N0} -> {targetSummary.ZipCodeCount:N0} ");
+            WritePassFail(zipMatch);
+            passed &= zipMatch;
+
+            Console.WriteLine();
+
+            totalStopwatch.Stop();
+
+            // ===================================================================
+            // RESULT
+            // ===================================================================
+            if (passed)
+            {
+                Console.WriteLine("+==============================================================+");
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"|         MIGRATION COMPLETE: {source} -> {target} SUCCESS");
+                Console.ResetColor();
+                Console.WriteLine("+==============================================================+");
+                Console.WriteLine();
+                Console.WriteLine($"  Total time: {totalStopwatch.Elapsed.TotalSeconds:F2}s");
+                Console.WriteLine($"  Total records: {states.Count + cities.Count + zipCodes.Count:N0}");
+                return 0;
+            }
+            else
+            {
+                Console.WriteLine("+==============================================================+");
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("|         MIGRATION VERIFICATION FAILED                        |");
+                Console.ResetColor();
+                Console.WriteLine("+==============================================================+");
+                return 1;
+            }
+        }
+        catch (Exception ex)
+        {
+            CommandBase.WriteError($"Error: {ex.Message}");
+            if (verbose)
+            {
+                Console.WriteLine(ex.StackTrace);
+            }
+            return 1;
+        }
+        finally
+        {
+            targetHost?.Dispose();
+        }
+    }
+
+    private static async Task<List<Entity>> QueryAllEntitiesAsync(
+        IDataverseConnectionPool pool,
+        string entityName,
+        params string[] attributes)
+    {
+        var allEntities = new List<Entity>();
+
+        await using var client = await pool.GetClientAsync();
+
+        var query = new QueryExpression(entityName)
+        {
+            ColumnSet = new ColumnSet(attributes),
+            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
+        };
+
+        while (true)
+        {
+            var result = await client.RetrieveMultipleAsync(query);
+            allEntities.AddRange(result.Entities);
+
+            if (!result.MoreRecords)
+                break;
+
+            query.PageInfo.PageNumber++;
+            query.PageInfo.PagingCookie = result.PagingCookie;
+        }
+
+        return allEntities;
+    }
+
+    private static Progress<ProgressSnapshot> CreateProgress(string entityName)
+    {
+        return new Progress<ProgressSnapshot>(s =>
+        {
+            Console.WriteLine($"    Progress: {s.Processed:N0}/{s.Total:N0} ({s.PercentComplete:F1}%) " +
+                $"| {s.RatePerSecond:F0}/s | {s.Elapsed:mm\\:ss} elapsed | ETA: {s.EstimatedRemaining:mm\\:ss}");
+        });
+    }
+
+    private static void PrintBulkResult(string prefix, BulkOperationResult result)
+    {
+        var rate = result.Duration.TotalSeconds > 0
+            ? result.SuccessCount / result.Duration.TotalSeconds
+            : 0;
+
+        // Show created/updated breakdown if available (upsert operations)
+        if (result.CreatedCount.HasValue && result.UpdatedCount.HasValue)
+        {
+            Console.WriteLine($"{prefix}: {result.SuccessCount:N0} upserted " +
+                $"({result.CreatedCount:N0} created, {result.UpdatedCount:N0} updated) " +
+                $"in {result.Duration.TotalSeconds:F2}s ({rate:F1}/s)");
+        }
+        else
+        {
+            Console.WriteLine($"{prefix}: {result.SuccessCount:N0} upserted " +
+                $"in {result.Duration.TotalSeconds:F2}s ({rate:F1}/s)");
+        }
+
+        if (result.FailureCount > 0)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"{prefix}: {result.FailureCount} failures");
+            foreach (var error in result.Errors.Take(5))
+            {
+                Console.WriteLine($"    Error at index {error.Index}: {error.Message}");
+            }
+            if (result.Errors.Count > 5)
+            {
+                Console.WriteLine($"    ... and {result.Errors.Count - 5} more errors");
+            }
+            Console.ResetColor();
+        }
+    }
+
+    #endregion
+
+    #region Shared Helpers
+
+    private static async Task<GeoSummary> QueryGeoSummary(IPooledClient client)
+    {
+        var summary = new GeoSummary();
+
+        // Query state count
+        var stateQuery = new QueryExpression("ppds_state")
+        {
+            ColumnSet = new ColumnSet(false),
+            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
+        };
+        var stateResult = await client.RetrieveMultipleAsync(stateQuery);
+        summary.StateCount = stateResult.Entities.Count;
+
+        // Query city count
+        var cityQuery = new QueryExpression("ppds_city")
+        {
+            ColumnSet = new ColumnSet(false),
+            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
+        };
+        var cityResult = await client.RetrieveMultipleAsync(cityQuery);
+        summary.CityCount = cityResult.Entities.Count;
+
+        // Query zipcode count (may need paging)
+        var zipQuery = new QueryExpression("ppds_zipcode")
+        {
+            ColumnSet = new ColumnSet(false),
+            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
+        };
+        var totalZips = 0;
+        while (true)
+        {
+            var zipResult = await client.RetrieveMultipleAsync(zipQuery);
+            totalZips += zipResult.Entities.Count;
+            if (!zipResult.MoreRecords) break;
+            zipQuery.PageInfo.PageNumber++;
+            zipQuery.PageInfo.PagingCookie = zipResult.PagingCookie;
+        }
+        summary.ZipCodeCount = totalZips;
+
+        return summary;
+    }
+
+    private static void PrintGeoSummary(string prefix, GeoSummary summary)
+    {
+        Console.WriteLine($"{prefix}: {summary.StateCount} states, {summary.CityCount} cities, {summary.ZipCodeCount:N0} ZIP codes");
+    }
+
+    private static void WritePassFail(bool passed)
+    {
+        if (passed)
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("[PASS]");
+        }
+        else
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("[FAIL]");
+        }
+        Console.ResetColor();
+    }
+
+    private class GeoSummary
+    {
+        public int StateCount { get; set; }
+        public int CityCount { get; set; }
+        public int ZipCodeCount { get; set; }
+        public int TotalCount => StateCount + CityCount + ZipCodeCount;
+    }
+
+    #endregion
+}

@@ -90,7 +90,14 @@ public static class TestMigrationCommand
                 Console.Write("  Creating accounts... ");
                 var accountResult = await bulkExecutor.UpsertMultipleAsync("account", accounts,
                     new BulkOperationOptions { ContinueOnError = true });
-                CommandBase.WriteSuccess($"{accountResult.SuccessCount} created");
+                if (accountResult.CreatedCount.HasValue && accountResult.UpdatedCount.HasValue)
+                {
+                    CommandBase.WriteSuccess($"{accountResult.SuccessCount} upserted ({accountResult.CreatedCount} created, {accountResult.UpdatedCount} updated)");
+                }
+                else
+                {
+                    CommandBase.WriteSuccess($"{accountResult.SuccessCount} upserted");
+                }
 
                 // Set parent relationships
                 Console.Write("  Setting parent relationships... ");
@@ -102,7 +109,14 @@ public static class TestMigrationCommand
                 Console.Write("  Creating contacts... ");
                 var contactResult = await bulkExecutor.UpsertMultipleAsync("contact", contacts,
                     new BulkOperationOptions { ContinueOnError = true });
-                CommandBase.WriteSuccess($"{contactResult.SuccessCount} created");
+                if (contactResult.CreatedCount.HasValue && contactResult.UpdatedCount.HasValue)
+                {
+                    CommandBase.WriteSuccess($"{contactResult.SuccessCount} upserted ({contactResult.CreatedCount} created, {contactResult.UpdatedCount} updated)");
+                }
+                else
+                {
+                    CommandBase.WriteSuccess($"{contactResult.SuccessCount} upserted");
+                }
 
                 Console.WriteLine();
             }
