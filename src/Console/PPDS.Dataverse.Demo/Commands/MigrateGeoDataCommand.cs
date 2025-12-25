@@ -4,8 +4,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using PPDS.Dataverse.BulkOperations;
+using PPDS.Dataverse.Demo.Infrastructure;
 using PPDS.Dataverse.Pooling;
 using PPDS.Dataverse.Progress;
+using PPDS.Dataverse.Resilience;
 
 namespace PPDS.Dataverse.Demo.Commands;
 
@@ -58,13 +60,10 @@ public static class MigrateGeoDataCommand
             "--use-sdk",
             "Use direct SDK instead of CLI (for SDK developers)");
 
-        var parallelismOption = new Option<int?>(
-            "--parallelism",
-            "Max parallel batches for SDK mode");
-
-        var verboseOption = new Option<bool>(
-            ["--verbose", "-v"],
-            "Show detailed output including CLI commands");
+        // Use standardized options from GlobalOptionsExtensions
+        var parallelismOption = GlobalOptionsExtensions.CreateParallelismOption();
+        var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
+        var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
         command.AddOption(sourceOption);
         command.AddOption(targetOption);
@@ -73,11 +72,12 @@ public static class MigrateGeoDataCommand
         command.AddOption(useSdkOption);
         command.AddOption(parallelismOption);
         command.AddOption(verboseOption);
+        command.AddOption(debugOption);
 
-        command.SetHandler(async (string source, string? target, bool dryRun, bool cleanTarget, bool useSdk, int? parallelism, bool verbose) =>
+        command.SetHandler(async (string source, string? target, bool dryRun, bool cleanTarget, bool useSdk, int? parallelism, bool verbose, bool debug) =>
         {
-            Environment.ExitCode = await ExecuteAsync(source, target, dryRun, cleanTarget, useSdk, parallelism, verbose);
-        }, sourceOption, targetOption, dryRunOption, cleanTargetOption, useSdkOption, parallelismOption, verboseOption);
+            Environment.ExitCode = await ExecuteAsync(source, target, dryRun, cleanTarget, useSdk, parallelism, verbose, debug);
+        }, sourceOption, targetOption, dryRunOption, cleanTargetOption, useSdkOption, parallelismOption, verboseOption, debugOption);
 
         return command;
     }
@@ -89,28 +89,33 @@ public static class MigrateGeoDataCommand
         bool cleanTarget,
         bool useSdk,
         int? parallelism = null,
-        bool verbose = false)
+        bool verbose = false,
+        bool debug = false)
     {
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine($"|       Geo Data Migration: {source} -> {target ?? "(dry-run)"}");
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine();
+        ConsoleWriter.Header($"Geo Data Migration: {source} -> {target ?? "(dry-run)"}");
 
         // Validate target is specified unless dry-run
         if (!dryRun && string.IsNullOrEmpty(target))
         {
-            CommandBase.WriteError("Target environment is required. Use --target <env> or --dry-run.");
+            ConsoleWriter.Error("Target environment is required. Use --target <env> or --dry-run.");
             return 1;
         }
 
         // Route to appropriate mode
         if (useSdk)
         {
-            return await ExecuteWithSdkAsync(source, target!, dryRun, cleanTarget, parallelism, verbose);
+            var options = new GlobalOptions
+            {
+                Environment = source, // SDK mode uses source for initial connection
+                Verbose = verbose,
+                Debug = debug,
+                Parallelism = parallelism
+            };
+            return await ExecuteWithSdkAsync(source, target!, dryRun, cleanTarget, options);
         }
         else
         {
-            return await ExecuteWithCliAsync(source, target, dryRun, cleanTarget, verbose);
+            return await ExecuteWithCliAsync(source, target, dryRun, cleanTarget, verbose, debug);
         }
     }
 
@@ -125,7 +130,8 @@ public static class MigrateGeoDataCommand
         string? target,
         bool dryRun,
         bool cleanTarget,
-        bool verbose)
+        bool verbose,
+        bool debug)
     {
         var stopwatch = Stopwatch.StartNew();
 
@@ -137,28 +143,31 @@ public static class MigrateGeoDataCommand
 
         if (dryRun)
         {
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("  [DRY RUN] Will export only, no import");
-            Console.ResetColor();
+            ConsoleWriter.Warning("  [DRY RUN] Will export only, no import");
             Console.WriteLine();
         }
 
         // ===================================================================
         // STEP 1: Export (calls export-geo-data)
         // ===================================================================
-        Console.WriteLine("+-----------------------------------------------------------------+");
-        Console.WriteLine("| Step 1: Export from Source (export-geo-data)                   |");
-        Console.WriteLine("+-----------------------------------------------------------------+");
+        ConsoleWriter.Section("Step 1: Export from Source (export-geo-data)");
         Console.WriteLine();
+
+        // Create GlobalOptions for source environment
+        var sourceOptions = new GlobalOptions
+        {
+            Environment = source,
+            Verbose = verbose,
+            Debug = debug
+        };
 
         var exportResult = await ExportGeoDataCommand.ExecuteAsync(
             outputPath: DataPath,
-            environment: source,
-            verbose: verbose);
+            options: sourceOptions);
 
         if (exportResult != 0)
         {
-            CommandBase.WriteError("Export step failed");
+            ConsoleWriter.Error("Export step failed");
             return 1;
         }
 
@@ -166,11 +175,7 @@ public static class MigrateGeoDataCommand
 
         if (dryRun)
         {
-            Console.WriteLine("+==============================================================+");
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("|           DRY RUN COMPLETE - No import performed             |");
-            Console.ResetColor();
-            Console.WriteLine("+==============================================================+");
+            ConsoleWriter.ResultBanner("DRY RUN COMPLETE - No import performed", success: true);
             Console.WriteLine();
             Console.WriteLine($"  Export file: {DataPath}");
             Console.WriteLine();
@@ -182,31 +187,32 @@ public static class MigrateGeoDataCommand
         // ===================================================================
         // STEP 2: Import (calls import-geo-data)
         // ===================================================================
-        Console.WriteLine("+-----------------------------------------------------------------+");
-        Console.WriteLine($"| Step 2: Import to Target (import-geo-data)                    |");
-        Console.WriteLine("+-----------------------------------------------------------------+");
+        ConsoleWriter.Section("Step 2: Import to Target (import-geo-data)");
         Console.WriteLine();
+
+        // Create GlobalOptions for target environment
+        var targetOptions = new GlobalOptions
+        {
+            Environment = target!,
+            Verbose = verbose,
+            Debug = debug
+        };
 
         var importResult = await ImportGeoDataCommand.ExecuteAsync(
             dataPath: DataPath,
-            environment: target!,
-            cleanFirst: cleanTarget,
-            verbose: verbose);
+            options: targetOptions,
+            cleanFirst: cleanTarget);
 
         if (importResult != 0)
         {
-            CommandBase.WriteError("Import step failed");
+            ConsoleWriter.Error("Import step failed");
             return 1;
         }
 
         stopwatch.Stop();
 
         Console.WriteLine();
-        Console.WriteLine("+==============================================================+");
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"|         MIGRATION COMPLETE: {source} -> {target}");
-        Console.ResetColor();
-        Console.WriteLine("+==============================================================+");
+        ConsoleWriter.ResultBanner($"MIGRATION COMPLETE: {source} -> {target}", success: true);
         Console.WriteLine();
         Console.WriteLine($"  Total time: {stopwatch.Elapsed.TotalSeconds:F2}s");
 
@@ -222,20 +228,22 @@ public static class MigrateGeoDataCommand
         string target,
         bool dryRun,
         bool cleanTarget,
-        int? parallelism,
-        bool verbose)
+        GlobalOptions options)
     {
         Console.WriteLine("  Mode: SDK (Direct API)");
         Console.WriteLine();
 
         // Create hosts for both environments
-        using var sourceHost = CommandBase.CreateHostForBulkOperations(source, parallelism, verbose);
+        var sourceOptions = options with { Environment = source };
+        var targetOptions = options with { Environment = target };
+
+        using var sourceHost = CommandBase.CreateHostForBulkOperations(sourceOptions);
         var sourcePool = sourceHost.Services.GetRequiredService<IDataverseConnectionPool>();
         var sourceBulk = sourceHost.Services.GetRequiredService<IBulkOperationExecutor>();
 
         if (!sourcePool.IsEnabled)
         {
-            CommandBase.WriteError($"{source} environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
+            ConsoleWriter.Error($"{source} environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
         }
 
@@ -245,13 +253,13 @@ public static class MigrateGeoDataCommand
 
         if (!dryRun)
         {
-            targetHost = CommandBase.CreateHostForBulkOperations(target, parallelism, verbose);
+            targetHost = CommandBase.CreateHostForBulkOperations(targetOptions);
             targetPool = targetHost.Services.GetRequiredService<IDataverseConnectionPool>();
             targetBulk = targetHost.Services.GetRequiredService<IBulkOperationExecutor>();
 
             if (!targetPool.IsEnabled)
             {
-                CommandBase.WriteError($"{target} environment not configured.");
+                ConsoleWriter.Error($"{target} environment not configured.");
                 targetHost.Dispose();
                 return 1;
             }
@@ -262,9 +270,9 @@ public static class MigrateGeoDataCommand
             Console.WriteLine("  Environments:");
             Console.WriteLine($"    Source: {source}");
             Console.WriteLine($"    Target: {(dryRun ? "(dry-run)" : target)}");
-            if (parallelism.HasValue)
+            if (options.Parallelism.HasValue)
             {
-                Console.WriteLine($"    Parallelism: {parallelism.Value}");
+                Console.WriteLine($"    Parallelism: {options.Parallelism.Value}");
             }
             Console.WriteLine();
 
@@ -273,9 +281,7 @@ public static class MigrateGeoDataCommand
             // ===================================================================
             // PHASE 1: Query Source Data
             // ===================================================================
-            Console.WriteLine("+-----------------------------------------------------------------+");
-            Console.WriteLine("| Phase 1: Query Source Data                                      |");
-            Console.WriteLine("+-----------------------------------------------------------------+");
+            ConsoleWriter.Section("Phase 1: Query Source Data");
 
             await using var sourceClient = await sourcePool.GetClientAsync();
 
@@ -299,17 +305,13 @@ public static class MigrateGeoDataCommand
 
             if (states.Count == 0)
             {
-                CommandBase.WriteError($"No geo data found in {source}. Run load-geo-data first.");
+                ConsoleWriter.Error($"No geo data found in {source}. Run load-geo-data first.");
                 return 1;
             }
 
             if (dryRun)
             {
-                Console.WriteLine("+==============================================================+");
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("|           DRY RUN COMPLETE - No import performed             |");
-                Console.ResetColor();
-                Console.WriteLine("+==============================================================+");
+                ConsoleWriter.ResultBanner("DRY RUN COMPLETE - No import performed", success: true);
                 Console.WriteLine();
                 Console.WriteLine($"  Would import: {states.Count} states, {cities.Count} cities, {zipCodes.Count:N0} ZIP codes");
                 return 0;
@@ -320,22 +322,21 @@ public static class MigrateGeoDataCommand
             // ===================================================================
             if (cleanTarget)
             {
-                Console.WriteLine("+-----------------------------------------------------------------+");
-                Console.WriteLine("| Phase 2: Clean Target                                           |");
-                Console.WriteLine("+-----------------------------------------------------------------+");
+                ConsoleWriter.Section("Phase 2: Clean Target");
 
                 Console.WriteLine($"  Running clean-geo-data on {target}...");
                 var cleanResult = await CleanGeoDataCommand.ExecuteAsync(
                     zipOnly: false,
                     confirm: true,
-                    parallelism: parallelism,
+                    parallelism: options.Parallelism,
                     ratePreset: null, // Uses Conservative default for deletes
-                    verbose: verbose,
+                    verbose: options.Verbose,
+                    debug: options.Debug,
                     environment: target);
 
                 if (cleanResult != 0)
                 {
-                    CommandBase.WriteError("Clean target failed");
+                    ConsoleWriter.Error("Clean target failed");
                     return 1;
                 }
                 Console.WriteLine();
@@ -344,9 +345,7 @@ public static class MigrateGeoDataCommand
             // ===================================================================
             // PHASE 3: Import to Target
             // ===================================================================
-            Console.WriteLine("+-----------------------------------------------------------------+");
-            Console.WriteLine($"| Phase {(cleanTarget ? "3" : "2")}: Import to {target}");
-            Console.WriteLine("+-----------------------------------------------------------------+");
+            ConsoleWriter.Section($"Phase {(cleanTarget ? "3" : "2")}: Import to {target}");
 
             // Build state abbreviation -> Entity map for lookup resolution
             var stateAbbreviationMap = new Dictionary<string, Entity>();
@@ -468,9 +467,7 @@ public static class MigrateGeoDataCommand
             // ===================================================================
             // PHASE 4: Verify Target
             // ===================================================================
-            Console.WriteLine("+-----------------------------------------------------------------+");
-            Console.WriteLine($"| Phase {(cleanTarget ? "4" : "3")}: Verify {target}");
-            Console.WriteLine("+-----------------------------------------------------------------+");
+            ConsoleWriter.Section($"Phase {(cleanTarget ? "4" : "3")}: Verify {target}");
 
             var targetSummary = await QueryGeoSummary(targetClient);
             PrintGeoSummary($"  {target}", targetSummary);
@@ -489,17 +486,17 @@ public static class MigrateGeoDataCommand
 
             var stateMatch = sourceSummary.StateCount == targetSummary.StateCount;
             Console.Write($"    States: {sourceSummary.StateCount} -> {targetSummary.StateCount} ");
-            WritePassFail(stateMatch);
+            ConsoleWriter.PassFail(stateMatch);
             passed &= stateMatch;
 
             var cityMatch = sourceSummary.CityCount == targetSummary.CityCount;
             Console.Write($"    Cities: {sourceSummary.CityCount} -> {targetSummary.CityCount} ");
-            WritePassFail(cityMatch);
+            ConsoleWriter.PassFail(cityMatch);
             passed &= cityMatch;
 
             var zipMatch = sourceSummary.ZipCodeCount == targetSummary.ZipCodeCount;
             Console.Write($"    ZIP Codes: {sourceSummary.ZipCodeCount:N0} -> {targetSummary.ZipCodeCount:N0} ");
-            WritePassFail(zipMatch);
+            ConsoleWriter.PassFail(zipMatch);
             passed &= zipMatch;
 
             Console.WriteLine();
@@ -511,11 +508,7 @@ public static class MigrateGeoDataCommand
             // ===================================================================
             if (passed)
             {
-                Console.WriteLine("+==============================================================+");
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine($"|         MIGRATION COMPLETE: {source} -> {target} SUCCESS");
-                Console.ResetColor();
-                Console.WriteLine("+==============================================================+");
+                ConsoleWriter.ResultBanner($"MIGRATION COMPLETE: {source} -> {target} SUCCESS", success: true);
                 Console.WriteLine();
                 Console.WriteLine($"  Total time: {totalStopwatch.Elapsed.TotalSeconds:F2}s");
                 Console.WriteLine($"  Total records: {states.Count + cities.Count + zipCodes.Count:N0}");
@@ -523,21 +516,13 @@ public static class MigrateGeoDataCommand
             }
             else
             {
-                Console.WriteLine("+==============================================================+");
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("|         MIGRATION VERIFICATION FAILED                        |");
-                Console.ResetColor();
-                Console.WriteLine("+==============================================================+");
+                ConsoleWriter.ResultBanner("MIGRATION VERIFICATION FAILED", success: false);
                 return 1;
             }
         }
         catch (Exception ex)
         {
-            CommandBase.WriteError($"Error: {ex.Message}");
-            if (verbose)
-            {
-                Console.WriteLine(ex.StackTrace);
-            }
+            ConsoleWriter.Exception(ex, options.Debug);
             return 1;
         }
         finally
@@ -671,22 +656,7 @@ public static class MigrateGeoDataCommand
         Console.WriteLine($"{prefix}: {summary.StateCount} states, {summary.CityCount} cities, {summary.ZipCodeCount:N0} ZIP codes");
     }
 
-    private static void WritePassFail(bool passed)
-    {
-        if (passed)
-        {
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("[PASS]");
-        }
-        else
-        {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("[FAIL]");
-        }
-        Console.ResetColor();
-    }
-
-    private class GeoSummary
+    private record GeoSummary
     {
         public int StateCount { get; set; }
         public int CityCount { get; set; }

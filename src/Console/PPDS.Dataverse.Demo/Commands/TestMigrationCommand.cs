@@ -1,11 +1,11 @@
 using System.CommandLine;
-using System.Diagnostics;
 using System.IO.Compression;
 using System.Xml.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using PPDS.Dataverse.BulkOperations;
+using PPDS.Dataverse.Demo.Infrastructure;
 using PPDS.Dataverse.Demo.Models;
 using PPDS.Dataverse.Pooling;
 
@@ -14,13 +14,21 @@ namespace PPDS.Dataverse.Demo.Commands;
 /// <summary>
 /// End-to-end test of ppds-migrate CLI.
 /// Seeds data, exports, cleans, imports, and verifies relationships are restored.
+///
+/// This command provides a comprehensive round-trip test:
+///   1. Seed test data with relationships (accounts, contacts)
+///   2. Generate schema and export to ZIP
+///   3. Delete the source data
+///   4. Import from ZIP
+///   5. Verify all records and relationships restored
+///
+/// Usage:
+///   dotnet run -- test-migration
+///   dotnet run -- test-migration --skip-seed --skip-clean
+///   dotnet run -- test-migration --env QA --verbose
 /// </summary>
 public static class TestMigrationCommand
 {
-    private static readonly string CliPath = Path.GetFullPath(
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "..",
-            "sdk", "src", "PPDS.Migration.Cli", "bin", "Debug", "net8.0", "ppds-migrate.exe"));
-
     private static readonly string SchemaPath = Path.Combine(AppContext.BaseDirectory, "test-schema.xml");
     private static readonly string DataPath = Path.Combine(AppContext.BaseDirectory, "test-export.zip");
 
@@ -30,43 +38,61 @@ public static class TestMigrationCommand
 
         var skipSeedOption = new Option<bool>("--skip-seed", "Skip seeding (use existing data)");
         var skipCleanOption = new Option<bool>("--skip-clean", "Skip cleaning after export");
-        var envOption = new Option<string?>(
-            aliases: ["--environment", "--env", "-e"],
-            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
+
+        // Use standardized options from GlobalOptionsExtensions
+        var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
+        var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
+        var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
         command.AddOption(skipSeedOption);
         command.AddOption(skipCleanOption);
         command.AddOption(envOption);
+        command.AddOption(verboseOption);
+        command.AddOption(debugOption);
 
-        command.SetHandler(async (bool skipSeed, bool skipClean, string? environment) =>
+        command.SetHandler(async (bool skipSeed, bool skipClean, string? environment, bool verbose, bool debug) =>
         {
-            Environment.ExitCode = await ExecuteAsync(skipSeed, skipClean, environment);
-        }, skipSeedOption, skipCleanOption, envOption);
+            var options = new GlobalOptions
+            {
+                Environment = environment,
+                Verbose = verbose,
+                Debug = debug
+            };
+            Environment.ExitCode = await ExecuteAsync(skipSeed, skipClean, options);
+        }, skipSeedOption, skipCleanOption, envOption, verboseOption, debugOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(bool skipSeed, bool skipClean, string? environment = null)
+    public static async Task<int> ExecuteAsync(
+        bool skipSeed,
+        bool skipClean,
+        GlobalOptions options)
     {
-        Console.WriteLine("+==========================================================+");
-        Console.WriteLine("|         ppds-migrate End-to-End Test                     |");
-        Console.WriteLine("+==========================================================+");
-        Console.WriteLine();
+        ConsoleWriter.Header("ppds-migrate End-to-End Test");
+
+        // Create CLI client with logging if verbose
+        var cli = options.EffectiveVerbose
+            ? MigrationCli.CreateWithConsoleLogging()
+            : new MigrationCli();
 
         // Verify CLI exists
-        if (!File.Exists(CliPath))
+        if (!cli.Exists)
         {
-            CommandBase.WriteError($"CLI not found: {CliPath}");
+            ConsoleWriter.Error($"CLI not found: {cli.CliPath}");
             Console.WriteLine("Build the CLI first: dotnet build ../sdk/src/PPDS.Migration.Cli");
             return 1;
         }
 
-        using var host = CommandBase.CreateHost(environment);
+        using var host = CommandBase.CreateHost(options);
         var pool = CommandBase.GetConnectionPool(host);
         if (pool == null) return 1;
 
         var bulkExecutor = host.Services.GetRequiredService<IBulkOperationExecutor>();
-        var envName = CommandBase.ResolveEnvironment(host, environment);
+        var envName = CommandBase.ResolveEnvironment(host, options);
+
+        // Update options with resolved environment
+        options = options with { Environment = envName };
 
         Console.WriteLine($"  Environment: {envName}");
         Console.WriteLine();
@@ -78,9 +104,7 @@ public static class TestMigrationCommand
             // ===================================================================
             if (!skipSeed)
             {
-                Console.WriteLine("+---------------------------------------------------------+");
-                Console.WriteLine("| Phase 1: Seed Test Data                                 |");
-                Console.WriteLine("+---------------------------------------------------------+");
+                ConsoleWriter.Section("Phase 1: Seed Test Data");
 
                 var accounts = SampleData.GetAccounts();
                 var accountParentUpdates = SampleData.GetAccountParentUpdates();
@@ -92,18 +116,18 @@ public static class TestMigrationCommand
                     new BulkOperationOptions { ContinueOnError = true });
                 if (accountResult.CreatedCount.HasValue && accountResult.UpdatedCount.HasValue)
                 {
-                    CommandBase.WriteSuccess($"{accountResult.SuccessCount} upserted ({accountResult.CreatedCount} created, {accountResult.UpdatedCount} updated)");
+                    ConsoleWriter.Success($"{accountResult.SuccessCount} upserted ({accountResult.CreatedCount} created, {accountResult.UpdatedCount} updated)");
                 }
                 else
                 {
-                    CommandBase.WriteSuccess($"{accountResult.SuccessCount} upserted");
+                    ConsoleWriter.Success($"{accountResult.SuccessCount} upserted");
                 }
 
                 // Set parent relationships
                 Console.Write("  Setting parent relationships... ");
                 var parentResult = await bulkExecutor.UpdateMultipleAsync("account", accountParentUpdates,
                     new BulkOperationOptions { ContinueOnError = true });
-                CommandBase.WriteSuccess($"{parentResult.SuccessCount} updated");
+                ConsoleWriter.Success($"{parentResult.SuccessCount} updated");
 
                 // Create contacts
                 Console.Write("  Creating contacts... ");
@@ -111,11 +135,11 @@ public static class TestMigrationCommand
                     new BulkOperationOptions { ContinueOnError = true });
                 if (contactResult.CreatedCount.HasValue && contactResult.UpdatedCount.HasValue)
                 {
-                    CommandBase.WriteSuccess($"{contactResult.SuccessCount} upserted ({contactResult.CreatedCount} created, {contactResult.UpdatedCount} updated)");
+                    ConsoleWriter.Success($"{contactResult.SuccessCount} upserted ({contactResult.CreatedCount} created, {contactResult.UpdatedCount} updated)");
                 }
                 else
                 {
-                    CommandBase.WriteSuccess($"{contactResult.SuccessCount} upserted");
+                    ConsoleWriter.Success($"{contactResult.SuccessCount} upserted");
                 }
 
                 Console.WriteLine();
@@ -130,31 +154,30 @@ public static class TestMigrationCommand
             // ===================================================================
             // PHASE 2: Generate schema and export
             // ===================================================================
-            Console.WriteLine("+---------------------------------------------------------+");
-            Console.WriteLine("| Phase 2: Generate Schema & Export                       |");
-            Console.WriteLine("+---------------------------------------------------------+");
+            ConsoleWriter.Section("Phase 2: Generate Schema & Export");
 
             // Generate schema
             Console.Write("  Generating schema... ");
-            var schemaResult = await RunCliAsync(
-                $"schema generate -e account,contact -o \"{SchemaPath}\" --env {envName} --secrets-id ppds-dataverse-demo");
-            if (schemaResult != 0)
+            var schemaResult = await cli.SchemaGenerateAsync(
+                new[] { "account", "contact" },
+                SchemaPath,
+                options);
+            if (schemaResult.Failed)
             {
-                CommandBase.WriteError("Schema generation failed");
+                ConsoleWriter.Error("Schema generation failed");
                 return 1;
             }
-            CommandBase.WriteSuccess("Done");
+            ConsoleWriter.Success("Done");
 
             // Export data
             Console.Write("  Exporting data... ");
-            var exportResult = await RunCliAsync(
-                $"export --schema \"{SchemaPath}\" --output \"{DataPath}\" --env {envName} --secrets-id ppds-dataverse-demo");
-            if (exportResult != 0)
+            var exportResult = await cli.ExportAsync(SchemaPath, DataPath, options);
+            if (exportResult.Failed)
             {
-                CommandBase.WriteError("Export failed");
+                ConsoleWriter.Error("Export failed");
                 return 1;
             }
-            CommandBase.WriteSuccess($"Done ({new FileInfo(DataPath).Length / 1024} KB)");
+            ConsoleWriter.Success($"Done ({new FileInfo(DataPath).Length / 1024} KB)");
 
             // Inspect exported data
             Console.WriteLine("  Inspecting exported data...");
@@ -166,23 +189,21 @@ public static class TestMigrationCommand
             // ===================================================================
             if (!skipClean)
             {
-                Console.WriteLine("+---------------------------------------------------------+");
-                Console.WriteLine("| Phase 3: Clean Test Data                                |");
-                Console.WriteLine("+---------------------------------------------------------+");
+                ConsoleWriter.Section("Phase 3: Clean Test Data");
 
                 // Delete contacts first (foreign key constraint)
                 var contactIds = SampleData.GetContacts().Select(c => c.Id).ToList();
                 Console.Write($"  Deleting {contactIds.Count} contacts... ");
                 var deleteContactResult = await bulkExecutor.DeleteMultipleAsync("contact", contactIds,
                     new BulkOperationOptions { ContinueOnError = true });
-                CommandBase.WriteSuccess($"{deleteContactResult.SuccessCount} deleted");
+                ConsoleWriter.Success($"{deleteContactResult.SuccessCount} deleted");
 
                 // Delete accounts
                 var accountIds = SampleData.GetAccounts().Select(a => a.Id).ToList();
                 Console.Write($"  Deleting {accountIds.Count} accounts... ");
                 var deleteAccountResult = await bulkExecutor.DeleteMultipleAsync("account", accountIds,
                     new BulkOperationOptions { ContinueOnError = true });
-                CommandBase.WriteSuccess($"{deleteAccountResult.SuccessCount} deleted");
+                ConsoleWriter.Success($"{deleteAccountResult.SuccessCount} deleted");
 
                 // Verify clean
                 var cleanData = await QueryTestData(pool);
@@ -193,27 +214,25 @@ public static class TestMigrationCommand
             // ===================================================================
             // PHASE 4: Import data
             // ===================================================================
-            Console.WriteLine("+---------------------------------------------------------+");
-            Console.WriteLine("| Phase 4: Import Data                                    |");
-            Console.WriteLine("+---------------------------------------------------------+");
+            ConsoleWriter.Section("Phase 4: Import Data");
 
             Console.Write("  Importing data... ");
-            var importResult = await RunCliAsync(
-                $"import --data \"{DataPath}\" --mode Upsert --env {envName} --secrets-id ppds-dataverse-demo");
-            if (importResult != 0)
+            var importResult = await cli.ImportAsync(
+                DataPath,
+                options,
+                new ImportCliOptions { Mode = "Upsert" });
+            if (importResult.Failed)
             {
-                CommandBase.WriteError("Import failed");
+                ConsoleWriter.Error("Import failed");
                 return 1;
             }
-            CommandBase.WriteSuccess("Done");
+            ConsoleWriter.Success("Done");
             Console.WriteLine();
 
             // ===================================================================
             // PHASE 5: Verify imported data
             // ===================================================================
-            Console.WriteLine("+---------------------------------------------------------+");
-            Console.WriteLine("| Phase 5: Verify Import                                  |");
-            Console.WriteLine("+---------------------------------------------------------+");
+            ConsoleWriter.Section("Phase 5: Verify Import");
 
             var importedData = await QueryTestData(pool);
             PrintDataSummary("  Imported", importedData);
@@ -225,30 +244,30 @@ public static class TestMigrationCommand
 
             // Account count
             var accountMatch = sourceData.Accounts.Count == importedData.Accounts.Count;
-            Console.WriteLine($"    Accounts: {sourceData.Accounts.Count} → {importedData.Accounts.Count} " +
-                (accountMatch ? "✓" : "✗"));
+            Console.Write($"    Accounts: {sourceData.Accounts.Count} -> {importedData.Accounts.Count} ");
+            ConsoleWriter.PassFail(accountMatch);
             passed &= accountMatch;
 
             // Contact count
             var contactMatch = sourceData.Contacts.Count == importedData.Contacts.Count;
-            Console.WriteLine($"    Contacts: {sourceData.Contacts.Count} → {importedData.Contacts.Count} " +
-                (contactMatch ? "✓" : "✗"));
+            Console.Write($"    Contacts: {sourceData.Contacts.Count} -> {importedData.Contacts.Count} ");
+            ConsoleWriter.PassFail(contactMatch);
             passed &= contactMatch;
 
             // Parent account relationships
             var sourceParents = sourceData.Accounts.Count(a => a.ParentAccountId.HasValue);
             var importedParents = importedData.Accounts.Count(a => a.ParentAccountId.HasValue);
             var parentMatch = sourceParents == importedParents;
-            Console.WriteLine($"    Parent Account refs: {sourceParents} → {importedParents} " +
-                (parentMatch ? "✓" : "✗"));
+            Console.Write($"    Parent Account refs: {sourceParents} -> {importedParents} ");
+            ConsoleWriter.PassFail(parentMatch);
             passed &= parentMatch;
 
             // Contact company relationships
             var sourceCompany = sourceData.Contacts.Count(c => c.ParentCustomerId.HasValue);
             var importedCompany = importedData.Contacts.Count(c => c.ParentCustomerId.HasValue);
             var companyMatch = sourceCompany == importedCompany;
-            Console.WriteLine($"    Contact→Account refs: {sourceCompany} → {importedCompany} " +
-                (companyMatch ? "✓" : "✗"));
+            Console.Write($"    Contact->Account refs: {sourceCompany} -> {importedCompany} ");
+            ConsoleWriter.PassFail(companyMatch);
             passed &= companyMatch;
 
             Console.WriteLine();
@@ -258,48 +277,20 @@ public static class TestMigrationCommand
             // ===================================================================
             if (passed)
             {
-                Console.WriteLine("+==========================================================+");
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine("|                    TEST PASSED ✓                         |");
-                Console.ResetColor();
-                Console.WriteLine("+==========================================================+");
+                ConsoleWriter.ResultBanner("TEST PASSED", success: true);
                 return 0;
             }
             else
             {
-                Console.WriteLine("+==========================================================+");
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("|                    TEST FAILED ✗                         |");
-                Console.ResetColor();
-                Console.WriteLine("+==========================================================+");
+                ConsoleWriter.ResultBanner("TEST FAILED", success: false);
                 return 1;
             }
         }
         catch (Exception ex)
         {
-            CommandBase.WriteError($"Error: {ex.Message}");
-            Console.WriteLine(ex.StackTrace);
+            ConsoleWriter.Exception(ex, options.Debug);
             return 1;
         }
-    }
-
-    private static async Task<int> RunCliAsync(string arguments)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = CliPath,
-            Arguments = arguments,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        using var process = Process.Start(psi);
-        if (process == null) return 1;
-
-        await process.WaitForExitAsync();
-        return process.ExitCode;
     }
 
     private static async Task<TestData> QueryTestData(IDataverseConnectionPool pool)

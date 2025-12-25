@@ -1,7 +1,7 @@
 using System.CommandLine;
-using System.Diagnostics;
 using System.IO.Compression;
 using System.Xml.Linq;
+using PPDS.Dataverse.Demo.Infrastructure;
 
 namespace PPDS.Dataverse.Demo.Commands;
 
@@ -11,13 +11,14 @@ namespace PPDS.Dataverse.Demo.Commands;
 /// - Attribute filtering (--include-attributes, --exclude-attributes, --exclude-patterns)
 /// - User mapping (--user-mapping)
 /// - Plugin disable/enable (disableplugins schema attribute)
+///
+/// Usage:
+///   dotnet run -- demo-features
+///   dotnet run -- demo-features --feature m2m --verbose
+///   dotnet run -- demo-features --feature filtering --env Dev
 /// </summary>
 public static class MigrationFeaturesCommand
 {
-    private static readonly string CliPath = Path.GetFullPath(
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "..",
-            "sdk", "src", "PPDS.Migration.Cli", "bin", "Debug", "net8.0", "ppds-migrate.exe"));
-
     private static readonly string SchemaPath = Path.Combine(
         AppContext.BaseDirectory, "migration", "schema-features.xml");
 
@@ -36,46 +37,54 @@ public static class MigrationFeaturesCommand
             description: "Specific feature to demo: m2m, filtering, user-mapping, plugin-disable, or all",
             getDefaultValue: () => "all");
 
-        var verboseOption = new Option<bool>(
-            "--verbose",
-            description: "Show detailed command output");
-
-        var envOption = new Option<string?>(
-            aliases: ["--environment", "--env", "-e"],
-            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
+        // Use standardized options from GlobalOptionsExtensions
+        var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
+        var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
+        var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
         command.AddOption(featureOption);
-        command.AddOption(verboseOption);
         command.AddOption(envOption);
+        command.AddOption(verboseOption);
+        command.AddOption(debugOption);
 
-        command.SetHandler(async (string feature, bool verbose, string? environment) =>
+        command.SetHandler(async (string feature, string? environment, bool verbose, bool debug) =>
         {
-            Environment.ExitCode = await ExecuteAsync(feature, verbose, environment);
-        }, featureOption, verboseOption, envOption);
+            var options = new GlobalOptions
+            {
+                Environment = environment,
+                Verbose = verbose,
+                Debug = debug
+            };
+            Environment.ExitCode = await ExecuteAsync(feature, options);
+        }, featureOption, envOption, verboseOption, debugOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(string feature, bool verbose, string? environment = null)
+    public static async Task<int> ExecuteAsync(string feature, GlobalOptions options)
     {
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine("|          ppds-migrate Feature Demonstration                  |");
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine();
+        ConsoleWriter.Header("ppds-migrate Feature Demonstration");
+
+        // Create CLI client with logging if verbose
+        var cli = options.EffectiveVerbose
+            ? MigrationCli.CreateWithConsoleLogging()
+            : new MigrationCli();
 
         // Verify CLI exists
-        if (!File.Exists(CliPath))
+        if (!cli.Exists)
         {
-            CommandBase.WriteError($"CLI not found: {CliPath}");
+            ConsoleWriter.Error($"CLI not found: {cli.CliPath}");
             Console.WriteLine("Build the CLI first: dotnet build ../sdk/src/PPDS.Migration.Cli");
             return 1;
         }
 
-        using var host = CommandBase.CreateHost(environment);
+        using var host = CommandBase.CreateHost(options);
         var pool = CommandBase.GetConnectionPool(host);
         if (pool == null) return 1;
 
-        var envName = CommandBase.ResolveEnvironment(host, environment);
+        var envName = CommandBase.ResolveEnvironment(host, options);
+        options = options with { Environment = envName };
+
         Console.WriteLine($"  Environment: {envName}");
         Console.WriteLine();
 
@@ -85,12 +94,12 @@ public static class MigrationFeaturesCommand
 
             if (features == "all" || features == "m2m")
             {
-                await DemoM2MRelationships(envName, verbose);
+                await DemoM2MRelationships(cli, options);
             }
 
             if (features == "all" || features == "filtering")
             {
-                await DemoAttributeFiltering(envName, verbose);
+                DemoAttributeFiltering();
             }
 
             if (features == "all" || features == "user-mapping")
@@ -104,30 +113,20 @@ public static class MigrationFeaturesCommand
             }
 
             Console.WriteLine();
-            Console.WriteLine("+==============================================================+");
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("|              FEATURE DEMO COMPLETE                           |");
-            Console.ResetColor();
-            Console.WriteLine("+==============================================================+");
+            ConsoleWriter.ResultBanner("FEATURE DEMO COMPLETE", success: true);
 
             return 0;
         }
         catch (Exception ex)
         {
-            CommandBase.WriteError($"Error: {ex.Message}");
-            if (verbose)
-            {
-                Console.WriteLine(ex.StackTrace);
-            }
+            ConsoleWriter.Exception(ex, options.Debug);
             return 1;
         }
     }
 
-    private static async Task DemoM2MRelationships(string envName, bool verbose)
+    private static async Task DemoM2MRelationships(IMigrationCli cli, GlobalOptions options)
     {
-        Console.WriteLine("+-----------------------------------------------------------------+");
-        Console.WriteLine("|  Feature 1: Many-to-Many (M2M) Relationship Support            |");
-        Console.WriteLine("+-----------------------------------------------------------------+");
+        ConsoleWriter.Section("Feature 1: Many-to-Many (M2M) Relationship Support");
         Console.WriteLine();
         Console.WriteLine("  M2M relationships link entities without foreign keys.");
         Console.WriteLine("  Example: Users <-> Roles via systemuserroles intersect table.");
@@ -150,13 +149,11 @@ public static class MigrationFeaturesCommand
         // Export with M2M
         Console.Write("  Exporting with M2M relationships... ");
 
-        var exportResult = await RunCliAsync(
-            $"export --schema \"{SchemaPath}\" --output \"{OutputPath}\" --env {envName} --secrets-id ppds-dataverse-demo",
-            verbose);
+        var exportResult = await cli.ExportAsync(SchemaPath, OutputPath, options);
 
-        if (exportResult == 0)
+        if (exportResult.Success)
         {
-            CommandBase.WriteSuccess("Done");
+            ConsoleWriter.Success("Done");
 
             // Inspect M2M data
             if (File.Exists(OutputPath))
@@ -192,15 +189,9 @@ public static class MigrationFeaturesCommand
         Console.WriteLine();
     }
 
-    private static Task DemoAttributeFiltering(string envName, bool verbose)
+    private static void DemoAttributeFiltering()
     {
-        // Parameters kept for consistent signature, but not used since this is info-only
-        _ = envName;
-        _ = verbose;
-
-        Console.WriteLine("+-----------------------------------------------------------------+");
-        Console.WriteLine("|  Feature 2: Attribute Filtering                                |");
-        Console.WriteLine("+-----------------------------------------------------------------+");
+        ConsoleWriter.Section("Feature 2: Attribute Filtering");
         Console.WriteLine();
         Console.WriteLine("  Control which attributes are included in the schema.");
         Console.WriteLine("  Filtering happens during SCHEMA GENERATION, not export.");
@@ -249,15 +240,11 @@ public static class MigrationFeaturesCommand
         Console.WriteLine("  ppds-migrate export --schema filtered-schema.xml --output data.zip");
         Console.ResetColor();
         Console.WriteLine();
-
-        return Task.CompletedTask;
     }
 
     private static void DemoUserMapping()
     {
-        Console.WriteLine("+-----------------------------------------------------------------+");
-        Console.WriteLine("|  Feature 3: User Mapping                                       |");
-        Console.WriteLine("+-----------------------------------------------------------------+");
+        ConsoleWriter.Section("Feature 3: User Mapping");
         Console.WriteLine();
         Console.WriteLine("  Map user GUIDs between source and target environments.");
         Console.WriteLine("  Critical for cross-tenant migrations where user IDs differ.");
@@ -302,9 +289,7 @@ public static class MigrationFeaturesCommand
 
     private static void DemoPluginDisable()
     {
-        Console.WriteLine("+-----------------------------------------------------------------+");
-        Console.WriteLine("|  Feature 4: Plugin Disable/Enable                              |");
-        Console.WriteLine("+-----------------------------------------------------------------+");
+        ConsoleWriter.Section("Feature 4: Plugin Disable/Enable");
         Console.WriteLine();
         Console.WriteLine("  Control plugin execution during import via schema attribute.");
         Console.WriteLine();
@@ -421,103 +406,5 @@ public static class MigrationFeaturesCommand
             Console.WriteLine($"    Could not inspect M2M data: {ex.Message}");
             Console.ResetColor();
         }
-    }
-
-    private static void InspectFilteredData(string zipPath)
-    {
-        try
-        {
-            using var archive = ZipFile.OpenRead(zipPath);
-            var dataEntry = archive.GetEntry("data.xml");
-
-            if (dataEntry == null)
-            {
-                Console.WriteLine("    No data.xml found");
-                return;
-            }
-
-            using var stream = dataEntry.Open();
-            var doc = XDocument.Load(stream);
-
-            Console.WriteLine("  Filtered Export Results:");
-
-            foreach (var entity in doc.Descendants("entity"))
-            {
-                var name = entity.Attribute("name")?.Value ?? "unknown";
-                var records = entity.Descendants("record").FirstOrDefault();
-
-                if (records != null)
-                {
-                    var fields = records.Elements("field")
-                        .Select(f => f.Attribute("name")?.Value ?? "?")
-                        .ToList();
-
-                    Console.WriteLine($"    {name} fields: {string.Join(", ", fields.Take(5))}");
-
-                    // Check for excluded fields
-                    var excludedPresent = fields.Any(f =>
-                        f == "createdon" || f == "modifiedon" ||
-                        f == "createdby" || f == "modifiedby" ||
-                        f.Contains("versionnumber"));
-
-                    if (!excludedPresent)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Green;
-                        Console.WriteLine($"      Audit fields excluded successfully");
-                        Console.ResetColor();
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine($"    Could not inspect: {ex.Message}");
-            Console.ResetColor();
-        }
-    }
-
-    private static async Task<int> RunCliAsync(string arguments, bool verbose)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = CliPath,
-            Arguments = arguments,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        using var process = Process.Start(psi);
-        if (process == null) return 1;
-
-        // IMPORTANT: Always read both streams to prevent deadlock
-        // (process blocks if output buffer fills while we wait for exit)
-        var outputTask = process.StandardOutput.ReadToEndAsync();
-        var errorTask = process.StandardError.ReadToEndAsync();
-
-        await process.WaitForExitAsync();
-
-        var output = await outputTask;
-        var error = await errorTask;
-
-        // Show stdout only in verbose mode
-        if (verbose && !string.IsNullOrEmpty(output))
-        {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.WriteLine(output);
-            Console.ResetColor();
-        }
-
-        // Always show stderr so we can see errors
-        if (!string.IsNullOrEmpty(error))
-        {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"    CLI Error: {error}");
-            Console.ResetColor();
-        }
-
-        return process.ExitCode;
     }
 }

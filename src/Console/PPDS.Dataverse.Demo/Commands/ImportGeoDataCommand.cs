@@ -1,8 +1,8 @@
 using System.CommandLine;
 using System.Diagnostics;
 using System.IO.Compression;
-using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using PPDS.Dataverse.Demo.Infrastructure;
 using PPDS.Dataverse.Pooling;
 
 namespace PPDS.Dataverse.Demo.Commands;
@@ -27,10 +27,6 @@ namespace PPDS.Dataverse.Demo.Commands;
 /// </summary>
 public static class ImportGeoDataCommand
 {
-    private static readonly string CliPath = Path.GetFullPath(
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "..",
-            "sdk", "src", "PPDS.Migration.Cli", "bin", "Debug", "net8.0", "ppds-migrate.exe"));
-
     public static Command Create()
     {
         var command = new Command("import-geo-data", "Import geographic data from a ZIP package");
@@ -42,49 +38,51 @@ public static class ImportGeoDataCommand
             IsRequired = true
         };
 
-        var envOption = new Option<string>(
-            aliases: ["--environment", "--env", "-e"],
-            description: "Target environment name (required)")
-        {
-            IsRequired = true
-        };
-
         var cleanFirstOption = new Option<bool>(
             "--clean-first",
             "Run clean-geo-data before import");
 
-        var verboseOption = new Option<bool>(
-            ["--verbose", "-v"],
-            "Show detailed output including CLI commands");
+        // Use standardized options from GlobalOptionsExtensions
+        var envOption = GlobalOptionsExtensions.CreateEnvironmentOption(isRequired: true);
+        var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
+        var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
         command.AddOption(dataOption);
         command.AddOption(envOption);
         command.AddOption(cleanFirstOption);
         command.AddOption(verboseOption);
+        command.AddOption(debugOption);
 
-        command.SetHandler(async (string data, string environment, bool cleanFirst, bool verbose) =>
+        command.SetHandler(async (string data, string? environment, bool cleanFirst, bool verbose, bool debug) =>
         {
-            Environment.ExitCode = await ExecuteAsync(data, environment, cleanFirst, verbose);
-        }, dataOption, envOption, cleanFirstOption, verboseOption);
+            var options = new GlobalOptions
+            {
+                Environment = environment!,
+                Verbose = verbose,
+                Debug = debug
+            };
+            Environment.ExitCode = await ExecuteAsync(data, options, cleanFirst);
+        }, dataOption, envOption, cleanFirstOption, verboseOption, debugOption);
 
         return command;
     }
 
     public static async Task<int> ExecuteAsync(
         string dataPath,
-        string environment,
-        bool cleanFirst = false,
-        bool verbose = false)
+        GlobalOptions options,
+        bool cleanFirst = false)
     {
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine("|       Import Geographic Data                                 |");
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine();
+        ConsoleWriter.Header("Import Geographic Data");
+
+        // Create CLI client with logging if verbose
+        var cli = options.EffectiveVerbose
+            ? MigrationCli.CreateWithConsoleLogging()
+            : new MigrationCli();
 
         // Verify CLI exists
-        if (!File.Exists(CliPath))
+        if (!cli.Exists)
         {
-            CommandBase.WriteError($"CLI not found: {CliPath}");
+            ConsoleWriter.Error($"CLI not found: {cli.CliPath}");
             Console.WriteLine("Build the CLI first: dotnet build ../sdk/src/PPDS.Migration.Cli");
             return 1;
         }
@@ -92,23 +90,19 @@ public static class ImportGeoDataCommand
         // Verify data package exists
         if (!File.Exists(dataPath))
         {
-            CommandBase.WriteError($"Data package not found: {dataPath}");
+            ConsoleWriter.Error($"Data package not found: {dataPath}");
             Console.WriteLine("Create a package first: dotnet run -- export-geo-data --output geo-export.zip");
             return 1;
         }
 
         // Create connection pool to verify target
-        using var host = CommandBase.CreateHost(environment);
+        using var host = CommandBase.CreateHost(options);
         var pool = CommandBase.GetConnectionPool(host);
 
         if (pool == null)
         {
-            CommandBase.WriteError($"{environment} environment not configured.");
-            Console.WriteLine();
-            Console.WriteLine($"Configure {environment} environment in User Secrets:");
-            Console.WriteLine($"  dotnet user-secrets set \"Dataverse:Environments:{environment}:Url\" \"https://{environment.ToLower()}.crm.dynamics.com\"");
-            Console.WriteLine($"  dotnet user-secrets set \"Dataverse:Environments:{environment}:Connections:0:ClientId\" \"...\"");
-            Console.WriteLine($"  dotnet user-secrets set \"Dataverse:Environments:{environment}:Connections:0:ClientSecret\" \"...\"");
+            ConsoleWriter.Error($"{options.Environment} environment not configured.");
+            ConsoleWriter.ConnectionSetupInstructions(options.Environment);
             return 1;
         }
 
@@ -116,7 +110,7 @@ public static class ImportGeoDataCommand
 
         try
         {
-            Console.WriteLine($"  Environment: {environment}");
+            Console.WriteLine($"  Environment: {options.Environment}");
             Console.WriteLine($"  Package: {Path.GetFullPath(dataPath)}");
             Console.WriteLine($"  Size: {new FileInfo(dataPath).Length / 1024} KB");
             Console.WriteLine();
@@ -124,9 +118,7 @@ public static class ImportGeoDataCommand
             // ===================================================================
             // STEP 1: Inspect Package
             // ===================================================================
-            Console.WriteLine("+-----------------------------------------------------------------+");
-            Console.WriteLine("| Step 1: Inspect Package                                         |");
-            Console.WriteLine("+-----------------------------------------------------------------+");
+            ConsoleWriter.Section("Step 1: Inspect Package");
 
             var packageSummary = InspectPackage(dataPath);
             Console.WriteLine($"  States: {packageSummary.StateCount}");
@@ -138,9 +130,7 @@ public static class ImportGeoDataCommand
             // ===================================================================
             // STEP 2: Check Target (before)
             // ===================================================================
-            Console.WriteLine("+-----------------------------------------------------------------+");
-            Console.WriteLine("| Step 2: Check Target (before import)                            |");
-            Console.WriteLine("+-----------------------------------------------------------------+");
+            ConsoleWriter.Section("Step 2: Check Target (before import)");
 
             await using var client = await pool.GetClientAsync();
             var beforeSummary = await QueryGeoSummary(client);
@@ -156,24 +146,25 @@ public static class ImportGeoDataCommand
             // ===================================================================
             if (cleanFirst)
             {
-                Console.WriteLine("+-----------------------------------------------------------------+");
-                Console.WriteLine("| Step 3: Clean Target                                            |");
-                Console.WriteLine("+-----------------------------------------------------------------+");
+                ConsoleWriter.Section("Step 3: Clean Target");
 
                 if (beforeSummary.TotalCount > 0)
                 {
                     Console.WriteLine($"  Removing {beforeSummary.TotalCount:N0} existing records...");
+
+                    // Pass through GlobalOptions to CleanGeoDataCommand
                     var cleanResult = await CleanGeoDataCommand.ExecuteAsync(
                         zipOnly: false,
                         confirm: true,
-                        parallelism: null,
+                        parallelism: options.Parallelism,
                         ratePreset: null, // Uses Conservative default for deletes
-                        verbose: verbose,
-                        environment: environment);
+                        verbose: options.Verbose,
+                        debug: options.Debug,
+                        environment: options.Environment);
 
                     if (cleanResult != 0)
                     {
-                        CommandBase.WriteError("Clean failed");
+                        ConsoleWriter.Error("Clean failed");
                         return 1;
                     }
                 }
@@ -188,28 +179,28 @@ public static class ImportGeoDataCommand
             // STEP 4: Import Data
             // ===================================================================
             var importStep = cleanFirst ? "4" : "3";
-            Console.WriteLine("+-----------------------------------------------------------------+");
-            Console.WriteLine($"| Step {importStep}: Import Data (ppds-migrate import)");
-            Console.WriteLine("+-----------------------------------------------------------------+");
+            ConsoleWriter.Section($"Step {importStep}: Import Data (ppds-migrate import)");
 
             Console.Write("  Importing data package... ");
-            var importResult = await RunCliAsync(
-                $"import --data \"{dataPath}\" --mode Upsert --env {environment} --secrets-id ppds-dataverse-demo", verbose);
-            if (importResult != 0)
+
+            var importResult = await cli.ImportAsync(
+                dataPath,
+                options,
+                new ImportCliOptions { Mode = "Upsert" });
+
+            if (importResult.Failed)
             {
-                CommandBase.WriteError("Import failed");
+                ConsoleWriter.Error("Import failed");
                 return 1;
             }
-            CommandBase.WriteSuccess("Done");
+            ConsoleWriter.Success("Done");
             Console.WriteLine();
 
             // ===================================================================
             // STEP 5: Verify Target (after)
             // ===================================================================
             var verifyStep = cleanFirst ? "5" : "4";
-            Console.WriteLine("+-----------------------------------------------------------------+");
-            Console.WriteLine($"| Step {verifyStep}: Verify Target (after import)");
-            Console.WriteLine("+-----------------------------------------------------------------+");
+            ConsoleWriter.Section($"Step {verifyStep}: Verify Target (after import)");
 
             // Need a fresh client for accurate counts
             await using var verifyClient = await pool.GetClientAsync();
@@ -227,17 +218,17 @@ public static class ImportGeoDataCommand
 
             var stateMatch = packageSummary.StateCount == afterSummary.StateCount;
             Console.Write($"    States: {packageSummary.StateCount} vs {afterSummary.StateCount} ");
-            WritePassFail(stateMatch);
+            ConsoleWriter.PassFail(stateMatch);
             passed &= stateMatch;
 
             var cityMatch = packageSummary.CityCount == afterSummary.CityCount;
             Console.Write($"    Cities: {packageSummary.CityCount} vs {afterSummary.CityCount} ");
-            WritePassFail(cityMatch);
+            ConsoleWriter.PassFail(cityMatch);
             passed &= cityMatch;
 
             var zipMatch = packageSummary.ZipCodeCount == afterSummary.ZipCodeCount;
             Console.Write($"    ZIP Codes: {packageSummary.ZipCodeCount:N0} vs {afterSummary.ZipCodeCount:N0} ");
-            WritePassFail(zipMatch);
+            ConsoleWriter.PassFail(zipMatch);
             passed &= zipMatch;
 
             Console.WriteLine();
@@ -249,24 +240,16 @@ public static class ImportGeoDataCommand
             // ===================================================================
             if (passed)
             {
-                Console.WriteLine("+==============================================================+");
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine("|              Import Complete                                  |");
-                Console.ResetColor();
-                Console.WriteLine("+==============================================================+");
+                ConsoleWriter.ResultBanner("Import Complete", success: true);
                 Console.WriteLine();
-                Console.WriteLine($"  Environment: {environment}");
+                Console.WriteLine($"  Environment: {options.Environment}");
                 Console.WriteLine($"  Records: {afterSummary.TotalCount:N0}");
                 Console.WriteLine($"  Time: {stopwatch.Elapsed.TotalSeconds:F2}s");
                 return 0;
             }
             else
             {
-                Console.WriteLine("+==============================================================+");
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("|         Import Complete (with verification warnings)         |");
-                Console.ResetColor();
-                Console.WriteLine("+==============================================================+");
+                ConsoleWriter.ResultBanner("Import Complete (with verification warnings)", success: false);
                 Console.WriteLine();
                 Console.WriteLine("  Some counts don't match. This may be expected if:");
                 Console.WriteLine("    - Target had existing data (use --clean-first)");
@@ -276,11 +259,7 @@ public static class ImportGeoDataCommand
         }
         catch (Exception ex)
         {
-            CommandBase.WriteError($"Error: {ex.Message}");
-            if (verbose)
-            {
-                Console.WriteLine(ex.StackTrace);
-            }
+            ConsoleWriter.Exception(ex, options.Debug);
             return 1;
         }
     }
@@ -319,60 +298,6 @@ public static class ImportGeoDataCommand
         }
 
         return summary;
-    }
-
-    private static async Task<int> RunCliAsync(string arguments, bool verbose = false)
-    {
-        if (verbose)
-        {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.WriteLine($"\n    > ppds-migrate {RedactSecrets(arguments)}");
-            Console.ResetColor();
-        }
-
-        var psi = new ProcessStartInfo
-        {
-            FileName = CliPath,
-            Arguments = arguments,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        using var process = Process.Start(psi);
-        if (process == null) return 1;
-
-        var outputTask = process.StandardOutput.ReadToEndAsync();
-        var errorTask = process.StandardError.ReadToEndAsync();
-
-        await process.WaitForExitAsync();
-
-        var output = await outputTask;
-        var error = await errorTask;
-
-        if (verbose && !string.IsNullOrEmpty(output))
-        {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            foreach (var line in output.Split('\n').Take(15))
-            {
-                Console.WriteLine($"    {line}");
-            }
-            if (output.Split('\n').Length > 15)
-            {
-                Console.WriteLine($"    ... ({output.Split('\n').Length - 15} more lines)");
-            }
-            Console.ResetColor();
-        }
-
-        if (!string.IsNullOrEmpty(error) && process.ExitCode != 0)
-        {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"\n    CLI Error: {error}");
-            Console.ResetColor();
-        }
-
-        return process.ExitCode;
     }
 
     private static async Task<GeoSummary> QueryGeoSummary(IPooledClient client)
@@ -414,31 +339,7 @@ public static class ImportGeoDataCommand
         return summary;
     }
 
-    private static void WritePassFail(bool passed)
-    {
-        if (passed)
-        {
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("[PASS]");
-        }
-        else
-        {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("[FAIL]");
-        }
-        Console.ResetColor();
-    }
-
-    private static string RedactSecrets(string arguments)
-    {
-        return Regex.Replace(
-            arguments,
-            @"(ClientSecret|Password|Secret|Key)=([^;""]+)",
-            "$1=***REDACTED***",
-            RegexOptions.IgnoreCase);
-    }
-
-    private class PackageSummary
+    private record PackageSummary
     {
         public int StateCount { get; set; }
         public int CityCount { get; set; }
@@ -446,7 +347,7 @@ public static class ImportGeoDataCommand
         public int TotalCount => StateCount + CityCount + ZipCodeCount;
     }
 
-    private class GeoSummary
+    private record GeoSummary
     {
         public int StateCount { get; set; }
         public int CityCount { get; set; }

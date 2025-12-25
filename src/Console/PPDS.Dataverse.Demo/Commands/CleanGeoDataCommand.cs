@@ -41,7 +41,11 @@ public static class CleanGeoDataCommand
 
         var verboseOption = new Option<bool>(
             ["--verbose", "-v"],
-            "Enable verbose logging (shows SDK debug output)");
+            "Enable verbose logging (operational: Connecting..., Processing...)");
+
+        var debugOption = new Option<bool>(
+            "--debug",
+            "Enable debug logging (diagnostic: parallelism, ceiling, internal state)");
 
         var envOption = new Option<string?>(
             aliases: ["--environment", "--env", "-e"],
@@ -52,12 +56,13 @@ public static class CleanGeoDataCommand
         command.AddOption(parallelismOption);
         command.AddOption(ratePresetOption);
         command.AddOption(verboseOption);
+        command.AddOption(debugOption);
         command.AddOption(envOption);
 
-        command.SetHandler(async (bool zipOnly, bool confirm, int? parallelism, string? ratePreset, bool verbose, string? environment) =>
+        command.SetHandler(async (bool zipOnly, bool confirm, int? parallelism, string? ratePreset, bool verbose, bool debug, string? environment) =>
         {
-            Environment.ExitCode = await ExecuteAsync(zipOnly, confirm, parallelism, ratePreset, verbose, environment);
-        }, zipOnlyOption, confirmOption, parallelismOption, ratePresetOption, verboseOption, envOption);
+            Environment.ExitCode = await ExecuteAsync(zipOnly, confirm, parallelism, ratePreset, verbose, debug, environment);
+        }, zipOnlyOption, confirmOption, parallelismOption, ratePresetOption, verboseOption, debugOption, envOption);
 
         return command;
     }
@@ -68,6 +73,7 @@ public static class CleanGeoDataCommand
         int? parallelism = null,
         string? ratePreset = null,
         bool verbose = false,
+        bool debug = false,
         string? environment = null)
     {
         Console.WriteLine("+==============================================================+");
@@ -87,7 +93,7 @@ public static class CleanGeoDataCommand
         }
 
         // Create host with SDK services for bulk operations
-        using var host = CommandBase.CreateHostForBulkOperations(environment, parallelism, verbose, effectivePreset);
+        using var host = CommandBase.CreateHostForBulkOperations(environment, parallelism, verbose, debug, effectivePreset);
         var pool = host.Services.GetRequiredService<IDataverseConnectionPool>();
         var bulkExecutor = host.Services.GetRequiredService<IBulkOperationExecutor>();
 
@@ -105,9 +111,13 @@ public static class CleanGeoDataCommand
         {
             Console.WriteLine($"  Parallelism: {parallelism.Value}");
         }
-        if (verbose)
+        if (debug)
         {
-            Console.WriteLine("  Verbose logging enabled");
+            Console.WriteLine("  Logging: Debug (diagnostic details)");
+        }
+        else if (verbose)
+        {
+            Console.WriteLine("  Logging: Verbose (operational messages)");
         }
         Console.WriteLine();
 

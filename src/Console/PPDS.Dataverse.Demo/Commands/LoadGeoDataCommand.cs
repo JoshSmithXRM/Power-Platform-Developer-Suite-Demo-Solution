@@ -50,7 +50,11 @@ public static class LoadGeoDataCommand
 
         var verboseOption = new Option<bool>(
             ["--verbose", "-v"],
-            "Enable verbose logging (shows SDK debug output)");
+            "Enable verbose logging (operational: Connecting..., Processing...)");
+
+        var debugOption = new Option<bool>(
+            "--debug",
+            "Enable debug logging (diagnostic: parallelism, ceiling, internal state)");
 
         var envOption = new Option<string?>(
             aliases: ["--environment", "--env", "-e"],
@@ -61,17 +65,18 @@ public static class LoadGeoDataCommand
         command.AddOption(statesOnlyOption);
         command.AddOption(parallelismOption);
         command.AddOption(verboseOption);
+        command.AddOption(debugOption);
         command.AddOption(envOption);
 
-        command.SetHandler(async (int? limit, bool skipDownload, bool statesOnly, int? parallelism, bool verbose, string? environment) =>
+        command.SetHandler(async (int? limit, bool skipDownload, bool statesOnly, int? parallelism, bool verbose, bool debug, string? environment) =>
         {
-            Environment.ExitCode = await ExecuteAsync(limit, skipDownload, statesOnly, parallelism, verbose, environment);
-        }, limitOption, skipDownloadOption, statesOnlyOption, parallelismOption, verboseOption, envOption);
+            Environment.ExitCode = await ExecuteAsync(limit, skipDownload, statesOnly, parallelism, verbose, debug, environment);
+        }, limitOption, skipDownloadOption, statesOnlyOption, parallelismOption, verboseOption, debugOption, envOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(int? limit, bool skipDownload, bool statesOnly, int? parallelism = null, bool verbose = false, string? environment = null)
+    public static async Task<int> ExecuteAsync(int? limit, bool skipDownload, bool statesOnly, int? parallelism = null, bool verbose = false, bool debug = false, string? environment = null)
     {
         Console.WriteLine("+==============================================================+");
         Console.WriteLine("|       Load Geographic Data for Volume Testing                |");
@@ -79,7 +84,7 @@ public static class LoadGeoDataCommand
         Console.WriteLine();
 
         // Create host with SDK services for bulk operations
-        using var host = CommandBase.CreateHostForBulkOperations(environment, parallelism, verbose);
+        using var host = CommandBase.CreateHostForBulkOperations(environment, parallelism, verbose, debug);
         var pool = host.Services.GetRequiredService<IDataverseConnectionPool>();
         var bulkExecutor = host.Services.GetRequiredService<IBulkOperationExecutor>();
 
@@ -96,9 +101,13 @@ public static class LoadGeoDataCommand
         {
             Console.WriteLine($"  Parallelism: {parallelism.Value}");
         }
-        if (verbose)
+        if (debug)
         {
-            Console.WriteLine("  Verbose logging enabled");
+            Console.WriteLine("  Logging: Debug (diagnostic details)");
+        }
+        else if (verbose)
+        {
+            Console.WriteLine("  Logging: Verbose (operational messages)");
         }
         Console.WriteLine();
 

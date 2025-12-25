@@ -1,6 +1,6 @@
 using System.CommandLine;
 using System.Diagnostics;
-using System.Text.RegularExpressions;
+using PPDS.Dataverse.Demo.Infrastructure;
 using PPDS.Dataverse.Pooling;
 
 namespace PPDS.Dataverse.Demo.Commands;
@@ -23,12 +23,9 @@ namespace PPDS.Dataverse.Demo.Commands;
 /// </summary>
 public static class ExportGeoDataCommand
 {
-    private static readonly string CliPath = Path.GetFullPath(
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "..",
-            "sdk", "src", "PPDS.Migration.Cli", "bin", "Debug", "net8.0", "ppds-migrate.exe"));
-
     private static readonly string DefaultSchemaPath = Path.Combine(AppContext.BaseDirectory, "migration", "geo-schema.xml");
     private static readonly string DefaultOutputPath = Path.Combine(AppContext.BaseDirectory, "geo-export.zip");
+    private static readonly string[] GeoEntities = ["ppds_state", "ppds_city", "ppds_zipcode"];
 
     public static Command Create()
     {
@@ -38,54 +35,58 @@ public static class ExportGeoDataCommand
             aliases: ["--output", "-o"],
             description: $"Output ZIP file path (default: geo-export.zip)");
 
-        var envOption = new Option<string?>(
-            aliases: ["--environment", "--env", "-e"],
-            description: "Source environment name (default: Dev)");
-
-        var verboseOption = new Option<bool>(
-            ["--verbose", "-v"],
-            "Show detailed output including CLI commands");
+        // Use standardized options from GlobalOptionsExtensions
+        var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
+        var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
+        var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
         command.AddOption(outputOption);
         command.AddOption(envOption);
         command.AddOption(verboseOption);
+        command.AddOption(debugOption);
 
-        command.SetHandler(async (string? output, string? environment, bool verbose) =>
+        command.SetHandler(async (string? output, string? environment, bool verbose, bool debug) =>
         {
-            Environment.ExitCode = await ExecuteAsync(output, environment, verbose);
-        }, outputOption, envOption, verboseOption);
+            var options = new GlobalOptions
+            {
+                Environment = environment ?? "Dev",
+                Verbose = verbose,
+                Debug = debug
+            };
+            Environment.ExitCode = await ExecuteAsync(output, options);
+        }, outputOption, envOption, verboseOption, debugOption);
 
         return command;
     }
 
     public static async Task<int> ExecuteAsync(
-        string? outputPath = null,
-        string? environment = null,
-        bool verbose = false)
+        string? outputPath,
+        GlobalOptions options)
     {
         var output = outputPath ?? DefaultOutputPath;
-        var env = environment ?? "Dev";
 
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine("|       Export Geographic Data                                 |");
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine();
+        ConsoleWriter.Header("Export Geographic Data");
+
+        // Create CLI client with logging if verbose
+        var cli = options.EffectiveVerbose
+            ? MigrationCli.CreateWithConsoleLogging()
+            : new MigrationCli();
 
         // Verify CLI exists
-        if (!File.Exists(CliPath))
+        if (!cli.Exists)
         {
-            CommandBase.WriteError($"CLI not found: {CliPath}");
+            ConsoleWriter.Error($"CLI not found: {cli.CliPath}");
             Console.WriteLine("Build the CLI first: dotnet build ../sdk/src/PPDS.Migration.Cli");
             return 1;
         }
 
         // Create connection pool to verify source data
-        using var host = CommandBase.CreateHost(env);
+        using var host = CommandBase.CreateHost(options);
         var pool = CommandBase.GetConnectionPool(host);
 
         if (pool == null)
         {
-            CommandBase.WriteError($"{env} environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
+            ConsoleWriter.Error($"{options.Environment} environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
         }
 
@@ -107,16 +108,14 @@ public static class ExportGeoDataCommand
 
         try
         {
-            Console.WriteLine($"  Environment: {env}");
+            Console.WriteLine($"  Environment: {options.Environment}");
             Console.WriteLine($"  Output: {Path.GetFullPath(output)}");
             Console.WriteLine();
 
             // ===================================================================
             // STEP 1: Verify Source Data
             // ===================================================================
-            Console.WriteLine("+-----------------------------------------------------------------+");
-            Console.WriteLine("| Step 1: Verify Source Data                                      |");
-            Console.WriteLine("+-----------------------------------------------------------------+");
+            ConsoleWriter.Section("Step 1: Verify Source Data");
 
             await using var client = await pool.GetClientAsync();
             var summary = await QueryGeoSummary(client);
@@ -129,49 +128,50 @@ public static class ExportGeoDataCommand
 
             if (summary.TotalCount == 0)
             {
-                CommandBase.WriteError($"No geo data found in {env}. Run load-geo-data first.");
+                ConsoleWriter.Error($"No geo data found in {options.Environment}. Run load-geo-data first.");
                 return 1;
             }
 
             // ===================================================================
             // STEP 2: Generate Schema
             // ===================================================================
-            Console.WriteLine("+-----------------------------------------------------------------+");
-            Console.WriteLine("| Step 2: Generate Schema (ppds-migrate schema generate)         |");
-            Console.WriteLine("+-----------------------------------------------------------------+");
+            ConsoleWriter.Section("Step 2: Generate Schema (ppds-migrate schema generate)");
 
-            var geoEntities = "ppds_state,ppds_city,ppds_zipcode";
-            Console.Write($"  Generating schema for: {geoEntities}... ");
+            Console.Write($"  Generating schema for: {string.Join(", ", GeoEntities)}... ");
 
-            var schemaResult = await RunCliAsync(
-                $"schema generate -e {geoEntities} -o \"{DefaultSchemaPath}\" --env {env} --secrets-id ppds-dataverse-demo", verbose);
-            if (schemaResult != 0)
+            var schemaResult = await cli.SchemaGenerateAsync(
+                GeoEntities,
+                DefaultSchemaPath,
+                options);
+
+            if (schemaResult.Failed)
             {
-                CommandBase.WriteError("Schema generation failed");
+                ConsoleWriter.Error("Schema generation failed");
                 return 1;
             }
-            CommandBase.WriteSuccess("Done");
+            ConsoleWriter.Success("Done");
             Console.WriteLine($"  Schema file: {DefaultSchemaPath}");
             Console.WriteLine();
 
             // ===================================================================
             // STEP 3: Export Data
             // ===================================================================
-            Console.WriteLine("+-----------------------------------------------------------------+");
-            Console.WriteLine("| Step 3: Export Data (ppds-migrate export)                      |");
-            Console.WriteLine("+-----------------------------------------------------------------+");
+            ConsoleWriter.Section("Step 3: Export Data (ppds-migrate export)");
 
             Console.Write("  Exporting data package... ");
-            var exportResult = await RunCliAsync(
-                $"export --schema \"{DefaultSchemaPath}\" --output \"{output}\" --env {env} --secrets-id ppds-dataverse-demo", verbose);
-            if (exportResult != 0)
+            var exportResult = await cli.ExportAsync(
+                DefaultSchemaPath,
+                output,
+                options);
+
+            if (exportResult.Failed)
             {
-                CommandBase.WriteError("Export failed");
+                ConsoleWriter.Error("Export failed");
                 return 1;
             }
 
             var fileInfo = new FileInfo(output);
-            CommandBase.WriteSuccess($"Done ({fileInfo.Length / 1024} KB)");
+            ConsoleWriter.Success($"Done ({fileInfo.Length / 1024} KB)");
             Console.WriteLine();
 
             stopwatch.Stop();
@@ -179,11 +179,7 @@ public static class ExportGeoDataCommand
             // ===================================================================
             // RESULT
             // ===================================================================
-            Console.WriteLine("+==============================================================+");
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("|              Export Complete                                  |");
-            Console.ResetColor();
-            Console.WriteLine("+==============================================================+");
+            ConsoleWriter.ResultBanner("Export Complete", success: true);
             Console.WriteLine();
             Console.WriteLine($"  Package: {Path.GetFullPath(output)}");
             Console.WriteLine($"  Size: {fileInfo.Length / 1024} KB");
@@ -198,67 +194,9 @@ public static class ExportGeoDataCommand
         }
         catch (Exception ex)
         {
-            CommandBase.WriteError($"Error: {ex.Message}");
-            if (verbose)
-            {
-                Console.WriteLine(ex.StackTrace);
-            }
+            ConsoleWriter.Exception(ex, options.Debug);
             return 1;
         }
-    }
-
-    private static async Task<int> RunCliAsync(string arguments, bool verbose = false)
-    {
-        if (verbose)
-        {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.WriteLine($"\n    > ppds-migrate {RedactSecrets(arguments)}");
-            Console.ResetColor();
-        }
-
-        var psi = new ProcessStartInfo
-        {
-            FileName = CliPath,
-            Arguments = arguments,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        using var process = Process.Start(psi);
-        if (process == null) return 1;
-
-        var outputTask = process.StandardOutput.ReadToEndAsync();
-        var errorTask = process.StandardError.ReadToEndAsync();
-
-        await process.WaitForExitAsync();
-
-        var output = await outputTask;
-        var error = await errorTask;
-
-        if (verbose && !string.IsNullOrEmpty(output))
-        {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            foreach (var line in output.Split('\n').Take(15))
-            {
-                Console.WriteLine($"    {line}");
-            }
-            if (output.Split('\n').Length > 15)
-            {
-                Console.WriteLine($"    ... ({output.Split('\n').Length - 15} more lines)");
-            }
-            Console.ResetColor();
-        }
-
-        if (!string.IsNullOrEmpty(error) && process.ExitCode != 0)
-        {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"\n    CLI Error: {error}");
-            Console.ResetColor();
-        }
-
-        return process.ExitCode;
     }
 
     private static async Task<GeoSummary> QueryGeoSummary(IPooledClient client)
@@ -300,16 +238,7 @@ public static class ExportGeoDataCommand
         return summary;
     }
 
-    private static string RedactSecrets(string arguments)
-    {
-        return Regex.Replace(
-            arguments,
-            @"(ClientSecret|Password|Secret|Key)=([^;""]+)",
-            "$1=***REDACTED***",
-            RegexOptions.IgnoreCase);
-    }
-
-    private class GeoSummary
+    private record GeoSummary
     {
         public int StateCount { get; set; }
         public int CityCount { get; set; }

@@ -1,28 +1,36 @@
 using System.CommandLine;
 using System.Diagnostics;
 using System.IO.Compression;
-using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
+using PPDS.Dataverse.Demo.Infrastructure;
 using PPDS.Dataverse.Demo.Models;
 using PPDS.Dataverse.Pooling;
 
 namespace PPDS.Dataverse.Demo.Commands;
 
 /// <summary>
-/// Cross-environment migration test: Export from Dev, Import to QA.
+/// Cross-environment migration workflow: Export from Dev, Import to QA.
+///
+/// This command demonstrates the complete cross-environment migration workflow:
+///   1. Seed test data in source (optional)
+///   2. Generate schema and export from source
+///   3. Generate user mapping between environments
+///   4. Import to target with user mapping
+///   5. Verify record counts
 ///
 /// Requires two environment connections in User Secrets:
-///   Environments:Dev:ConnectionString = Dev (source)
-///   Environments:QA:ConnectionString = QA (target)
+///   Dataverse:Environments:Dev:* - Source environment
+///   Dataverse:Environments:QA:*  - Target environment
+///
+/// Usage:
+///   dotnet run -- migrate-to-qa
+///   dotnet run -- migrate-to-qa --skip-seed
+///   dotnet run -- migrate-to-qa --dry-run --verbose
 /// </summary>
 public static class CrossEnvMigrationCommand
 {
-    private static readonly string CliPath = Path.GetFullPath(
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "..",
-            "sdk", "src", "PPDS.Migration.Cli", "bin", "Debug", "net8.0", "ppds-migrate.exe"));
-
     private static readonly string SchemaPath = Path.Combine(AppContext.BaseDirectory, "cross-env-schema.xml");
     private static readonly string DataPath = Path.Combine(AppContext.BaseDirectory, "cross-env-export.zip");
     private static readonly string UserMappingPath = Path.Combine(AppContext.BaseDirectory, "user-mapping.xml");
@@ -43,59 +51,72 @@ public static class CrossEnvMigrationCommand
             "--include-m2m",
             "Include M2M relationships (systemuserroles, teammembership)");
 
-        var verboseOption = new Option<bool>(
-            ["--verbose", "-v"],
-            "Show detailed output including CLI commands");
+        // Use standardized options from GlobalOptionsExtensions
+        var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
+        var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
         command.AddOption(skipSeedOption);
         command.AddOption(dryRunOption);
         command.AddOption(includeM2MOption);
         command.AddOption(verboseOption);
+        command.AddOption(debugOption);
 
-        command.SetHandler(async (bool skipSeed, bool dryRun, bool includeM2M, bool verbose) =>
+        command.SetHandler(async (bool skipSeed, bool dryRun, bool includeM2M, bool verbose, bool debug) =>
         {
-            Environment.ExitCode = await ExecuteAsync(skipSeed, dryRun, includeM2M, verbose);
-        }, skipSeedOption, dryRunOption, includeM2MOption, verboseOption);
+            var options = new GlobalOptions
+            {
+                Verbose = verbose,
+                Debug = debug
+            };
+            Environment.ExitCode = await ExecuteAsync(skipSeed, dryRun, includeM2M, options);
+        }, skipSeedOption, dryRunOption, includeM2MOption, verboseOption, debugOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(bool skipSeed, bool dryRun, bool includeM2M, bool verbose = false)
+    public static async Task<int> ExecuteAsync(
+        bool skipSeed,
+        bool dryRun,
+        bool includeM2M,
+        GlobalOptions options)
     {
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine("|       Cross-Environment Migration: Dev → QA                  |");
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine();
+        ConsoleWriter.Header("Cross-Environment Migration: Dev -> QA");
+
+        // Create CLI client with logging if verbose
+        var cli = options.EffectiveVerbose
+            ? MigrationCli.CreateWithConsoleLogging()
+            : new MigrationCli();
 
         // Verify CLI exists
-        if (!File.Exists(CliPath))
+        if (!cli.Exists)
         {
-            CommandBase.WriteError($"CLI not found: {CliPath}");
+            ConsoleWriter.Error($"CLI not found: {cli.CliPath}");
             Console.WriteLine("Build the CLI first: dotnet build ../sdk/src/PPDS.Migration.Cli");
             return 1;
         }
 
+        // Create GlobalOptions for each environment
+        var devOptions = options with { Environment = "Dev" };
+        var qaOptions = options with { Environment = "QA" };
+
         // Create pools for both environments
-        using var devHost = CommandBase.CreateHost("Dev");
-        using var qaHost = CommandBase.CreateHost("QA");
+        using var devHost = CommandBase.CreateHost(devOptions);
+        using var qaHost = CommandBase.CreateHost(qaOptions);
 
         var devPool = CommandBase.GetConnectionPool(devHost);
         var qaPool = CommandBase.GetConnectionPool(qaHost);
 
         if (devPool == null)
         {
-            CommandBase.WriteError("Dev environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
+            ConsoleWriter.Error("Dev environment not configured.");
+            ConsoleWriter.ConnectionSetupInstructions("Dev");
             return 1;
         }
 
         if (qaPool == null)
         {
-            CommandBase.WriteError("QA environment not configured.");
-            Console.WriteLine();
-            Console.WriteLine("Configure QA environment in User Secrets:");
-            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Environments:QA:Url\" \"https://qa.crm.dynamics.com\"");
-            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Environments:QA:Connections:0:ClientId\" \"...\"");
-            Console.WriteLine("  dotnet user-secrets set \"Dataverse:Environments:QA:Connections:0:ClientSecret\" \"...\"");
+            ConsoleWriter.Error("QA environment not configured.");
+            ConsoleWriter.ConnectionSetupInstructions("QA");
             return 1;
         }
 
@@ -107,11 +128,11 @@ public static class CrossEnvMigrationCommand
 
         if (dryRun)
         {
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("  [DRY RUN] Will export only, no import to QA");
-            Console.ResetColor();
+            ConsoleWriter.Warning("  [DRY RUN] Will export only, no import to QA");
             Console.WriteLine();
         }
+
+        var stopwatch = Stopwatch.StartNew();
 
         try
         {
@@ -120,14 +141,12 @@ public static class CrossEnvMigrationCommand
             // ===================================================================
             if (!skipSeed)
             {
-                Console.WriteLine("+-----------------------------------------------------------------+");
-                Console.WriteLine("| Phase 1: Seed Test Data in Dev                                 |");
-                Console.WriteLine("+-----------------------------------------------------------------+");
+                ConsoleWriter.Section("Phase 1: Seed Test Data in Dev");
 
                 var seedResult = await SeedCommand.ExecuteAsync("Dev");
                 if (seedResult != 0)
                 {
-                    CommandBase.WriteError("Seed failed");
+                    ConsoleWriter.Error("Seed failed");
                     return 1;
                 }
                 Console.WriteLine();
@@ -143,40 +162,35 @@ public static class CrossEnvMigrationCommand
             // ===================================================================
             // PHASE 2: Generate schema and export from Dev
             // ===================================================================
-            Console.WriteLine("+-----------------------------------------------------------------+");
-            Console.WriteLine("| Phase 2: Export from Dev                                        |");
-            Console.WriteLine("+-----------------------------------------------------------------+");
+            ConsoleWriter.Section("Phase 2: Export from Dev");
 
             // Generate schema
-            // NOTE: Never include systemuser/team in cross-env migration - they're system entities
-            // managed by the platform. User references (ownerid) are handled by user mapping.
             Console.Write("  Generating schema... ");
-            var entities = "account,contact";
-            var schemaArgs = $"schema generate -e {entities} -o \"{SchemaPath}\" --env Dev --secrets-id ppds-dataverse-demo";
-            if (includeM2M)
-            {
-                // Only include M2M relationships between business entities (e.g., account-contact N:N)
-                schemaArgs += " --include-relationships";
-            }
+            var entities = new[] { "account", "contact" };
 
-            var schemaResult = await RunCliAsync(schemaArgs, verbose);
-            if (schemaResult != 0)
+            var schemaArgs = new CliArgs(devOptions)
+                .Command("schema generate")
+                .WithEntities(entities)
+                .WithOutput(SchemaPath)
+                .WithRelationships(includeM2M);
+
+            var schemaResult = await cli.RunAsync(schemaArgs);
+            if (schemaResult.Failed)
             {
-                CommandBase.WriteError("Schema generation failed");
+                ConsoleWriter.Error("Schema generation failed");
                 return 1;
             }
-            CommandBase.WriteSuccess("Done");
+            ConsoleWriter.Success("Done");
 
             // Export data
             Console.Write("  Exporting data... ");
-            var exportResult = await RunCliAsync(
-                $"export --schema \"{SchemaPath}\" --output \"{DataPath}\" --env Dev --secrets-id ppds-dataverse-demo", verbose);
-            if (exportResult != 0)
+            var exportResult = await cli.ExportAsync(SchemaPath, DataPath, devOptions);
+            if (exportResult.Failed)
             {
-                CommandBase.WriteError("Export failed");
+                ConsoleWriter.Error("Export failed");
                 return 1;
             }
-            CommandBase.WriteSuccess($"Done ({new FileInfo(DataPath).Length / 1024} KB)");
+            ConsoleWriter.Success($"Done ({new FileInfo(DataPath).Length / 1024} KB)");
 
             // Inspect exported data
             Console.WriteLine("  Exported data summary:");
@@ -185,32 +199,25 @@ public static class CrossEnvMigrationCommand
 
             if (dryRun)
             {
-                Console.WriteLine("+==============================================================+");
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("|           DRY RUN COMPLETE - No import performed             |");
-                Console.ResetColor();
-                Console.WriteLine("+==============================================================+");
+                ConsoleWriter.ResultBanner("DRY RUN COMPLETE - No import performed", success: true);
                 Console.WriteLine();
                 Console.WriteLine($"  Export file: {DataPath}");
                 Console.WriteLine($"  Schema file: {SchemaPath}");
                 Console.WriteLine();
                 Console.WriteLine("  To import manually:");
-                Console.WriteLine($"    ppds-migrate import --data \"{DataPath}\" --connection \"<QA connection>\"");
+                Console.WriteLine($"    ppds-migrate import --data \"{DataPath}\" --env QA --secrets-id ppds-dataverse-demo");
                 return 0;
             }
 
             // ===================================================================
             // PHASE 3: Generate user mapping
             // ===================================================================
-            // Always generate user mapping for cross-env migration - ownerid fields need remapping
-            Console.WriteLine("+-----------------------------------------------------------------+");
-            Console.WriteLine("| Phase 3: Generate User Mapping                                  |");
-            Console.WriteLine("+-----------------------------------------------------------------+");
+            ConsoleWriter.Section("Phase 3: Generate User Mapping");
 
             var mappingResult = await GenerateUserMappingCommand.ExecuteAsync(UserMappingPath, analyzeOnly: false);
             if (mappingResult != 0)
             {
-                CommandBase.WriteError("User mapping generation failed");
+                ConsoleWriter.Error("User mapping generation failed");
                 return 1;
             }
             Console.WriteLine();
@@ -218,33 +225,34 @@ public static class CrossEnvMigrationCommand
             // ===================================================================
             // PHASE 4: Import to QA
             // ===================================================================
-            Console.WriteLine("+-----------------------------------------------------------------+");
-            Console.WriteLine("| Phase 4: Import to QA                                           |");
-            Console.WriteLine("+-----------------------------------------------------------------+");
+            ConsoleWriter.Section("Phase 4: Import to QA");
 
-            var importArgs = $"import --data \"{DataPath}\" --mode Upsert --env QA --secrets-id ppds-dataverse-demo";
             if (File.Exists(UserMappingPath))
             {
-                importArgs += $" --user-mapping \"{UserMappingPath}\"";
                 Console.WriteLine($"  Using user mapping: {UserMappingPath}");
             }
 
             Console.Write("  Importing data to QA... ");
-            var importResult = await RunCliAsync(importArgs, verbose);
-            if (importResult != 0)
+
+            var importOptions = new ImportCliOptions
             {
-                CommandBase.WriteError("Import failed");
+                Mode = "Upsert",
+                UserMappingPath = File.Exists(UserMappingPath) ? UserMappingPath : null
+            };
+
+            var importResult = await cli.ImportAsync(DataPath, qaOptions, importOptions);
+            if (importResult.Failed)
+            {
+                ConsoleWriter.Error("Import failed");
                 return 1;
             }
-            CommandBase.WriteSuccess("Done");
+            ConsoleWriter.Success("Done");
             Console.WriteLine();
 
             // ===================================================================
             // PHASE 5: Verify in QA
             // ===================================================================
-            Console.WriteLine("+-----------------------------------------------------------------+");
-            Console.WriteLine("| Phase 5: Verify in QA                                           |");
-            Console.WriteLine("+-----------------------------------------------------------------+");
+            ConsoleWriter.Section("Phase 5: Verify in QA");
 
             await using var qaClient = await qaPool.GetClientAsync();
             var targetData = await QueryTestData(qaClient);
@@ -252,153 +260,62 @@ public static class CrossEnvMigrationCommand
             Console.WriteLine();
 
             // Compare
-            Console.WriteLine("  Comparison (Dev → QA):");
+            Console.WriteLine("  Comparison (Dev -> QA):");
             var passed = true;
 
             // Account count
             var accountMatch = sourceData.Accounts.Count == targetData.Accounts.Count;
-            Console.Write($"    Accounts: {sourceData.Accounts.Count} → {targetData.Accounts.Count} ");
-            WritePassFail(accountMatch);
+            Console.Write($"    Accounts: {sourceData.Accounts.Count} -> {targetData.Accounts.Count} ");
+            ConsoleWriter.PassFail(accountMatch);
             passed &= accountMatch;
 
             // Contact count
             var contactMatch = sourceData.Contacts.Count == targetData.Contacts.Count;
-            Console.Write($"    Contacts: {sourceData.Contacts.Count} → {targetData.Contacts.Count} ");
-            WritePassFail(contactMatch);
+            Console.Write($"    Contacts: {sourceData.Contacts.Count} -> {targetData.Contacts.Count} ");
+            ConsoleWriter.PassFail(contactMatch);
             passed &= contactMatch;
 
             // Parent account relationships
             var sourceParents = sourceData.Accounts.Count(a => a.ParentAccountId.HasValue);
             var targetParents = targetData.Accounts.Count(a => a.ParentAccountId.HasValue);
             var parentMatch = sourceParents == targetParents;
-            Console.Write($"    Parent refs: {sourceParents} → {targetParents} ");
-            WritePassFail(parentMatch);
+            Console.Write($"    Parent refs: {sourceParents} -> {targetParents} ");
+            ConsoleWriter.PassFail(parentMatch);
             passed &= parentMatch;
 
             // Contact company relationships
             var sourceCompany = sourceData.Contacts.Count(c => c.ParentCustomerId.HasValue);
             var targetCompany = targetData.Contacts.Count(c => c.ParentCustomerId.HasValue);
             var companyMatch = sourceCompany == targetCompany;
-            Console.Write($"    Company refs: {sourceCompany} → {targetCompany} ");
-            WritePassFail(companyMatch);
+            Console.Write($"    Company refs: {sourceCompany} -> {targetCompany} ");
+            ConsoleWriter.PassFail(companyMatch);
             passed &= companyMatch;
 
             Console.WriteLine();
+
+            stopwatch.Stop();
 
             // ===================================================================
             // RESULT
             // ===================================================================
             if (passed)
             {
-                Console.WriteLine("+==============================================================+");
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine("|         MIGRATION COMPLETE: Dev → QA SUCCESS                 |");
-                Console.ResetColor();
-                Console.WriteLine("+==============================================================+");
+                ConsoleWriter.ResultBanner("MIGRATION COMPLETE: Dev -> QA SUCCESS", success: true);
+                Console.WriteLine();
+                Console.WriteLine($"  Time: {stopwatch.Elapsed.TotalSeconds:F2}s");
                 return 0;
             }
             else
             {
-                Console.WriteLine("+==============================================================+");
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("|         MIGRATION VERIFICATION FAILED                        |");
-                Console.ResetColor();
-                Console.WriteLine("+==============================================================+");
+                ConsoleWriter.ResultBanner("MIGRATION VERIFICATION FAILED", success: false);
                 return 1;
             }
         }
         catch (Exception ex)
         {
-            CommandBase.WriteError($"Error: {ex.Message}");
-            Console.WriteLine(ex.StackTrace);
+            ConsoleWriter.Exception(ex, options.Debug);
             return 1;
         }
-    }
-
-    private static string ExtractOrgFromConnectionString(string connectionString)
-    {
-        // Extract org URL from connection string
-        var parts = connectionString.Split(';');
-        foreach (var part in parts)
-        {
-            if (part.Trim().StartsWith("Url=", StringComparison.OrdinalIgnoreCase))
-            {
-                var url = part.Substring(4).Trim();
-                var uri = new Uri(url);
-                return uri.Host;
-            }
-        }
-        return "unknown";
-    }
-
-    private static void WritePassFail(bool passed)
-    {
-        if (passed)
-        {
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("✓");
-        }
-        else
-        {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("✗");
-        }
-        Console.ResetColor();
-    }
-
-    private static async Task<int> RunCliAsync(string arguments, bool verbose = false)
-    {
-        if (verbose)
-        {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.WriteLine($"\n    > ppds-migrate {RedactSecrets(arguments)}");
-            Console.ResetColor();
-        }
-
-        var psi = new ProcessStartInfo
-        {
-            FileName = CliPath,
-            Arguments = arguments,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        using var process = Process.Start(psi);
-        if (process == null) return 1;
-
-        // Always drain streams to prevent deadlock
-        var outputTask = process.StandardOutput.ReadToEndAsync();
-        var errorTask = process.StandardError.ReadToEndAsync();
-
-        await process.WaitForExitAsync();
-
-        var output = await outputTask;
-        var error = await errorTask;
-
-        if (verbose && !string.IsNullOrEmpty(output))
-        {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            foreach (var line in output.Split('\n').Take(20))
-            {
-                Console.WriteLine($"    {line}");
-            }
-            if (output.Split('\n').Length > 20)
-            {
-                Console.WriteLine($"    ... ({output.Split('\n').Length - 20} more lines)");
-            }
-            Console.ResetColor();
-        }
-
-        if (!string.IsNullOrEmpty(error) && process.ExitCode != 0)
-        {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"\n    CLI Error: {error}");
-            Console.ResetColor();
-        }
-
-        return process.ExitCode;
     }
 
     private static async Task<TestData> QueryTestData(IPooledClient client)
@@ -504,20 +421,5 @@ public static class CrossEnvMigrationCommand
         public Guid Id { get; set; }
         public string? FullName { get; set; }
         public Guid? ParentCustomerId { get; set; }
-    }
-
-    /// <summary>
-    /// Redacts sensitive values from CLI arguments for safe logging.
-    /// </summary>
-    private static string RedactSecrets(string arguments)
-    {
-        // Redact ClientSecret, Password, and similar sensitive values in connection strings
-        var result = Regex.Replace(
-            arguments,
-            @"(ClientSecret|Password|Secret|Key)=([^;""]+)",
-            "$1=***REDACTED***",
-            RegexOptions.IgnoreCase);
-
-        return result;
     }
 }
