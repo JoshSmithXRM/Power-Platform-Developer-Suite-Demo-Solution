@@ -475,14 +475,15 @@ public static class LoadGeoDataCommand
         Console.WriteLine($"  Creating {missing.Count:N0} cities...");
 
         // Build entities for upsert with composite alternate key
+        // IMPORTANT: Do NOT set alternate key fields in both KeyAttributes AND Attributes
+        // - this causes "An item with the same key has already been added" error
         var cityEntities = missing.Select(c =>
         {
             var entity = new Entity("ppds_city");
-            // Use composite alternate key for upsert
+            // Composite alternate key: (ppds_name, ppds_stateid)
+            // Use EntityReference for lookup fields in KeyAttributes
             entity.KeyAttributes["ppds_name"] = c.Name;
-            entity.KeyAttributes["ppds_stateid"] = stateMap[c.StateAbbreviation];
-            // Only set the state lookup in Attributes (name is in KeyAttributes already)
-            entity["ppds_stateid"] = new EntityReference("ppds_state", stateMap[c.StateAbbreviation]);
+            entity.KeyAttributes["ppds_stateid"] = new EntityReference("ppds_state", stateMap[c.StateAbbreviation]);
             return entity;
         }).ToList();
 
