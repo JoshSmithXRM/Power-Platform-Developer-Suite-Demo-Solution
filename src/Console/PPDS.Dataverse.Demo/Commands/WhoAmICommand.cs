@@ -1,5 +1,6 @@
 using System.CommandLine;
 using Microsoft.Crm.Sdk.Messages;
+using PPDS.Dataverse.Demo.Infrastructure;
 
 namespace PPDS.Dataverse.Demo.Commands;
 
@@ -10,37 +11,45 @@ public static class WhoAmICommand
 {
     public static Command Create()
     {
-        var envOption = new Option<string?>(
-            aliases: ["--environment", "--env", "-e"],
-            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
+        var command = new Command("whoami", "Test connectivity with WhoAmI request");
 
-        var command = new Command("whoami", "Test connectivity with WhoAmI request")
-        {
-            envOption
-        };
+        // Use standardized options from GlobalOptionsExtensions
+        var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
+        var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
+        var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
-        command.SetHandler(async (string? environment) =>
+        command.AddOption(envOption);
+        command.AddOption(verboseOption);
+        command.AddOption(debugOption);
+
+        command.SetHandler(async (string? environment, bool verbose, bool debug) =>
         {
-            Environment.ExitCode = await ExecuteAsync(environment);
-        }, envOption);
+            var options = new GlobalOptions
+            {
+                Environment = environment,
+                Verbose = verbose,
+                Debug = debug
+            };
+            Environment.ExitCode = await ExecuteAsync(options);
+        }, envOption, verboseOption, debugOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(string? environment = null)
+    public static async Task<int> ExecuteAsync(GlobalOptions options)
     {
-        Console.WriteLine("Testing Dataverse Connectivity");
-        Console.WriteLine("==============================");
-        Console.WriteLine();
+        ConsoleWriter.Header("Testing Dataverse Connectivity");
 
-        using var host = CommandBase.CreateHost(environment);
-        var pool = CommandBase.GetConnectionPool(host);
+        using var host = HostFactory.CreateHostForMigration(options);
+        var pool = HostFactory.GetConnectionPool(host, options.Environment);
 
         if (pool == null)
+        {
+            ConsoleWriter.Error("Connection pool not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
+        }
 
-        var envDisplay = CommandBase.ResolveEnvironment(host, environment);
-        Console.WriteLine($"Environment: {envDisplay}");
+        Console.WriteLine($"Environment: {options.Environment ?? "Dev (default)"}");
         Console.WriteLine("Connecting to Dataverse...");
         Console.WriteLine();
 
@@ -74,8 +83,7 @@ public static class WhoAmICommand
         }
         catch (Exception ex)
         {
-            CommandBase.WriteError($"Error: {ex.Message}");
-            Console.WriteLine();
+            ConsoleWriter.Exception(ex, options.Debug);
             return 1;
         }
     }

@@ -1,6 +1,7 @@
 using System.CommandLine;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
+using PPDS.Dataverse.Demo.Infrastructure;
 using PPDS.Dataverse.Demo.Models;
 using PPDS.Dataverse.Pooling;
 
@@ -14,42 +15,50 @@ public static class CleanCommand
 {
     public static Command Create()
     {
+        var command = new Command("clean", "Remove sample accounts and contacts from Dataverse");
+
         var forceOption = new Option<bool>(
             aliases: ["--force", "-f"],
             description: "Skip confirmation prompt");
 
-        var envOption = new Option<string?>(
-            aliases: ["--environment", "--env", "-e"],
-            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
+        // Use standardized options from GlobalOptionsExtensions
+        var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
+        var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
+        var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
-        var command = new Command("clean", "Remove sample accounts and contacts from Dataverse")
-        {
-            forceOption,
-            envOption
-        };
+        command.AddOption(forceOption);
+        command.AddOption(envOption);
+        command.AddOption(verboseOption);
+        command.AddOption(debugOption);
 
-        command.SetHandler(async (bool force, string? environment) =>
+        command.SetHandler(async (bool force, string? environment, bool verbose, bool debug) =>
         {
-            Environment.ExitCode = await ExecuteAsync(force, environment);
-        }, forceOption, envOption);
+            var options = new GlobalOptions
+            {
+                Environment = environment,
+                Verbose = verbose,
+                Debug = debug
+            };
+            Environment.ExitCode = await ExecuteAsync(force, options);
+        }, forceOption, envOption, verboseOption, debugOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(bool force, string? environment = null)
+    public static async Task<int> ExecuteAsync(bool force, GlobalOptions options)
     {
-        Console.WriteLine("Cleaning Sample Data");
-        Console.WriteLine("====================");
-        Console.WriteLine();
+        ConsoleWriter.Header("Cleaning Sample Data");
 
-        using var host = CommandBase.CreateHost(environment);
-        var pool = CommandBase.GetConnectionPool(host);
+        using var host = HostFactory.CreateHostForMigration(options);
+        var pool = HostFactory.GetConnectionPool(host, options.Environment);
 
         if (pool == null)
+        {
+            ConsoleWriter.Error("Connection pool not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
+        }
 
-        var envDisplay = CommandBase.ResolveEnvironment(host, environment);
-        Console.WriteLine($"  Environment: {envDisplay}");
+        Console.WriteLine($"  Environment: {options.Environment ?? "Dev (default)"}");
         Console.WriteLine();
 
         var contactIds = SampleData.GetContactIds();
@@ -62,7 +71,7 @@ public static class CleanCommand
 
         if (!force)
         {
-            Console.Write($"Delete these records from {envDisplay}? (y/N): ");
+            Console.Write($"Delete these records from {options.Environment ?? "Dev"}? (y/N): ");
             var response = Console.ReadLine()?.Trim().ToLowerInvariant();
             if (response != "y" && response != "yes")
             {
@@ -89,15 +98,14 @@ public static class CleanCommand
             Console.WriteLine();
 
             var totalDeleted = contactSuccess + accountSuccess;
-            CommandBase.WriteSuccess($"Cleanup complete. {totalDeleted} records deleted.");
+            ConsoleWriter.Success($"Cleanup complete. {totalDeleted} records deleted.");
             Console.WriteLine();
 
             return 0;
         }
         catch (Exception ex)
         {
-            CommandBase.WriteError($"Error: {ex.Message}");
-            Console.WriteLine();
+            ConsoleWriter.Exception(ex, options.Debug);
             return 1;
         }
     }
@@ -148,7 +156,7 @@ public static class CleanCommand
     {
         if (failure == 0 && success > 0)
         {
-            CommandBase.WriteSuccess($"Done ({success} deleted)");
+            ConsoleWriter.Success($"Done ({success} deleted)");
         }
         else if (success == 0 && failure == total)
         {
@@ -158,7 +166,7 @@ public static class CleanCommand
         }
         else
         {
-            CommandBase.WriteError($"Partial ({success} deleted, {failure} failed)");
+            ConsoleWriter.Error($"Partial ({success} deleted, {failure} failed)");
         }
     }
 }

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Xrm.Sdk.Query;
 using PPDS.Dataverse.BulkOperations;
+using PPDS.Dataverse.Demo.Infrastructure;
 using PPDS.Dataverse.Pooling;
 using PPDS.Dataverse.Progress;
 using PPDS.Dataverse.Resilience;
@@ -31,38 +32,50 @@ public static class CleanGeoDataCommand
             "--confirm",
             "Skip confirmation prompt");
 
-        var parallelismOption = new Option<int?>(
-            "--parallelism",
-            "Max parallel batches (uses SDK default if not specified)");
-
-        var ratePresetOption = new Option<string?>(
-            "--rate-preset",
-            "Adaptive rate preset: Balanced, Conservative, Aggressive (default: Conservative for deletes)");
-
-        var verboseOption = new Option<bool>(
-            ["--verbose", "-v"],
-            "Enable verbose logging (operational: Connecting..., Processing...)");
-
-        var debugOption = new Option<bool>(
-            "--debug",
-            "Enable debug logging (diagnostic: parallelism, ceiling, internal state)");
-
-        var envOption = new Option<string?>(
-            aliases: ["--environment", "--env", "-e"],
-            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
+        // Use standardized options from GlobalOptionsExtensions
+        var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
+        var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
+        var debugOption = GlobalOptionsExtensions.CreateDebugOption();
+        var parallelismOption = GlobalOptionsExtensions.CreateParallelismOption();
+        var ratePresetOption = GlobalOptionsExtensions.CreateRatePresetOption(defaultPreset: "Conservative for deletes");
 
         command.AddOption(zipOnlyOption);
         command.AddOption(confirmOption);
-        command.AddOption(parallelismOption);
-        command.AddOption(ratePresetOption);
+        command.AddOption(envOption);
         command.AddOption(verboseOption);
         command.AddOption(debugOption);
-        command.AddOption(envOption);
+        command.AddOption(parallelismOption);
+        command.AddOption(ratePresetOption);
 
-        command.SetHandler(async (bool zipOnly, bool confirm, int? parallelism, string? ratePreset, bool verbose, bool debug, string? environment) =>
+        command.SetHandler(async (bool zipOnly, bool confirm, string? environment, bool verbose, bool debug, int? parallelism, string? ratePreset) =>
         {
-            Environment.ExitCode = await ExecuteAsync(zipOnly, confirm, parallelism, ratePreset, verbose, debug, environment);
-        }, zipOnlyOption, confirmOption, parallelismOption, ratePresetOption, verboseOption, debugOption, envOption);
+            // Parse rate preset - default to Conservative for delete operations (safer)
+            RateControlPreset? effectivePreset = null;
+            if (!string.IsNullOrEmpty(ratePreset))
+            {
+                if (!Enum.TryParse<RateControlPreset>(ratePreset, ignoreCase: true, out var parsed))
+                {
+                    ConsoleWriter.Error($"Invalid rate preset: {ratePreset}. Valid values: Balanced, Conservative, Aggressive");
+                    Environment.ExitCode = 1;
+                    return;
+                }
+                effectivePreset = parsed;
+            }
+            else
+            {
+                effectivePreset = RateControlPreset.Conservative; // Default for deletes
+            }
+
+            var options = new GlobalOptions
+            {
+                Environment = environment,
+                Verbose = verbose,
+                Debug = debug,
+                Parallelism = parallelism,
+                RatePreset = effectivePreset
+            };
+            Environment.ExitCode = await ExecuteAsync(zipOnly, confirm, options);
+        }, zipOnlyOption, confirmOption, envOption, verboseOption, debugOption, parallelismOption, ratePresetOption);
 
         return command;
     }
@@ -70,52 +83,33 @@ public static class CleanGeoDataCommand
     public static async Task<int> ExecuteAsync(
         bool zipOnly,
         bool confirm,
-        int? parallelism = null,
-        string? ratePreset = null,
-        bool verbose = false,
-        bool debug = false,
-        string? environment = null)
+        GlobalOptions options)
     {
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine("|       Clean Geographic Data                                  |");
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine();
-
-        // Parse rate preset - default to Conservative for delete operations (safer)
-        RateControlPreset effectivePreset = RateControlPreset.Conservative;
-        if (!string.IsNullOrEmpty(ratePreset))
-        {
-            if (!Enum.TryParse<RateControlPreset>(ratePreset, ignoreCase: true, out effectivePreset))
-            {
-                CommandBase.WriteError($"Invalid rate preset: {ratePreset}. Valid values: Balanced, Conservative, Aggressive");
-                return 1;
-            }
-        }
+        ConsoleWriter.Header("Clean Geographic Data");
 
         // Create host with SDK services for bulk operations
-        using var host = CommandBase.CreateHostForBulkOperations(environment, parallelism, verbose, debug, effectivePreset);
+        using var host = HostFactory.CreateHostForBulkOperations(options);
         var pool = host.Services.GetRequiredService<IDataverseConnectionPool>();
         var bulkExecutor = host.Services.GetRequiredService<IBulkOperationExecutor>();
 
         if (!pool.IsEnabled)
         {
-            CommandBase.WriteError("Connection pool not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
+            ConsoleWriter.Error("Connection pool not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
         }
 
-        var envDisplay = CommandBase.ResolveEnvironment(host, environment);
-        Console.WriteLine($"  Environment: {envDisplay}");
-        Console.WriteLine($"  Rate Preset: {effectivePreset}");
+        Console.WriteLine($"  Environment: {options.Environment ?? "Dev (default)"}");
+        Console.WriteLine($"  Rate Preset: {options.RatePreset ?? RateControlPreset.Conservative}");
 
-        if (parallelism.HasValue)
+        if (options.Parallelism.HasValue)
         {
-            Console.WriteLine($"  Parallelism: {parallelism.Value}");
+            Console.WriteLine($"  Parallelism: {options.Parallelism.Value}");
         }
-        if (debug)
+        if (options.Debug)
         {
             Console.WriteLine("  Logging: Debug (diagnostic details)");
         }
-        else if (verbose)
+        else if (options.Verbose)
         {
             Console.WriteLine("  Logging: Verbose (operational messages)");
         }
@@ -261,7 +255,7 @@ public static class CleanGeoDataCommand
         }
         catch (Exception ex)
         {
-            CommandBase.WriteError($"Error: {ex.Message}");
+            ConsoleWriter.Exception(ex, options.Debug);
             return 1;
         }
     }

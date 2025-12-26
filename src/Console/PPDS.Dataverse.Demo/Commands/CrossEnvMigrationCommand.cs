@@ -142,7 +142,8 @@ public static class CrossEnvMigrationCommand
             {
                 ConsoleWriter.Section("Phase 1: Seed Test Data in Dev");
 
-                var seedResult = await SeedCommand.ExecuteAsync("Dev");
+                var seedOptions = options with { Environment = "Dev" };
+                var seedResult = await SeedCommand.ExecuteAsync(seedOptions);
                 if (seedResult != 0)
                 {
                     ConsoleWriter.Error("Seed failed");
@@ -219,7 +220,7 @@ public static class CrossEnvMigrationCommand
             // ===================================================================
             ConsoleWriter.Section("Phase 3: Generate User Mapping");
 
-            var mappingResult = await GenerateUserMappingCommand.ExecuteAsync(UserMappingPath, analyzeOnly: false);
+            var mappingResult = await GenerateUserMappingCommand.ExecuteAsync(UserMappingPath, analyzeOnly: false, options);
             if (mappingResult != 0)
             {
                 ConsoleWriter.Error("User mapping generation failed");

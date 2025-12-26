@@ -2,6 +2,7 @@ using System.CommandLine;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
+using PPDS.Dataverse.Demo.Infrastructure;
 using PPDS.Dataverse.Demo.Models;
 using PPDS.Dataverse.Pooling;
 
@@ -21,37 +22,45 @@ public static class SeedCommand
 {
     public static Command Create()
     {
-        var envOption = new Option<string?>(
-            aliases: ["--environment", "--env", "-e"],
-            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
+        var command = new Command("seed", "Create sample accounts and contacts in Dataverse");
 
-        var command = new Command("seed", "Create sample accounts and contacts in Dataverse")
-        {
-            envOption
-        };
+        // Use standardized options from GlobalOptionsExtensions
+        var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
+        var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
+        var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
-        command.SetHandler(async (string? environment) =>
+        command.AddOption(envOption);
+        command.AddOption(verboseOption);
+        command.AddOption(debugOption);
+
+        command.SetHandler(async (string? environment, bool verbose, bool debug) =>
         {
-            Environment.ExitCode = await ExecuteAsync(environment);
-        }, envOption);
+            var options = new GlobalOptions
+            {
+                Environment = environment,
+                Verbose = verbose,
+                Debug = debug
+            };
+            Environment.ExitCode = await ExecuteAsync(options);
+        }, envOption, verboseOption, debugOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(string? environment = null)
+    public static async Task<int> ExecuteAsync(GlobalOptions options)
     {
-        Console.WriteLine("Seeding Sample Data");
-        Console.WriteLine("===================");
-        Console.WriteLine();
+        ConsoleWriter.Header("Seeding Sample Data");
 
-        using var host = CommandBase.CreateHost(environment);
-        var pool = CommandBase.GetConnectionPool(host);
+        using var host = HostFactory.CreateHostForMigration(options);
+        var pool = HostFactory.GetConnectionPool(host, options.Environment);
 
         if (pool == null)
+        {
+            ConsoleWriter.Error("Connection pool not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
+        }
 
-        var envDisplay = CommandBase.ResolveEnvironment(host, environment);
-        Console.WriteLine($"  Environment: {envDisplay}");
+        Console.WriteLine($"  Environment: {options.Environment ?? "Dev (default)"}");
         Console.WriteLine();
 
         try
@@ -104,18 +113,18 @@ public static class SeedCommand
                 await DeleteMultipleAsync(client, "account", existingAccounts);
             }
 
-            CommandBase.WriteSuccess($"Done ({existingContacts.Count} contacts, {existingAccounts.Count} accounts)");
+            ConsoleWriter.Success($"Done ({existingContacts.Count} contacts, {existingAccounts.Count} accounts)");
 
             // Phase 2: Create accounts with deterministic GUIDs
             Console.Write("Creating accounts... ");
             var accountResult = await CreateMultipleAsync(client, "account", accounts);
             if (accountResult.success == accounts.Count)
             {
-                CommandBase.WriteSuccess($"Done ({accountResult.success} created)");
+                ConsoleWriter.Success($"Done ({accountResult.success} created)");
             }
             else
             {
-                CommandBase.WriteError($"Partial ({accountResult.success} created, {accountResult.failure} failed)");
+                ConsoleWriter.Error($"Partial ({accountResult.success} created, {accountResult.failure} failed)");
                 return 1;
             }
 
@@ -126,11 +135,11 @@ public static class SeedCommand
                 var parentResult = await UpdateMultipleAsync(client, "account", accountParentUpdates);
                 if (parentResult.failure == 0)
                 {
-                    CommandBase.WriteSuccess($"Done ({parentResult.success} updated)");
+                    ConsoleWriter.Success($"Done ({parentResult.success} updated)");
                 }
                 else
                 {
-                    CommandBase.WriteError($"Partial ({parentResult.success} updated, {parentResult.failure} failed)");
+                    ConsoleWriter.Error($"Partial ({parentResult.success} updated, {parentResult.failure} failed)");
                 }
             }
 
@@ -139,16 +148,16 @@ public static class SeedCommand
             var contactResult = await CreateMultipleAsync(client, "contact", contacts);
             if (contactResult.success == contacts.Count)
             {
-                CommandBase.WriteSuccess($"Done ({contactResult.success} created)");
+                ConsoleWriter.Success($"Done ({contactResult.success} created)");
             }
             else
             {
-                CommandBase.WriteError($"Partial ({contactResult.success} created, {contactResult.failure} failed)");
+                ConsoleWriter.Error($"Partial ({contactResult.success} created, {contactResult.failure} failed)");
             }
 
             Console.WriteLine();
             var totalSuccess = accountResult.success + contactResult.success;
-            CommandBase.WriteSuccess($"Successfully seeded {totalSuccess} records.");
+            ConsoleWriter.Success($"Successfully seeded {totalSuccess} records.");
 
             Console.WriteLine();
             Console.WriteLine("Next steps:");
@@ -161,8 +170,7 @@ public static class SeedCommand
         }
         catch (Exception ex)
         {
-            CommandBase.WriteError($"Error: {ex.Message}");
-            Console.WriteLine();
+            ConsoleWriter.Exception(ex, options.Debug);
             return 1;
         }
     }

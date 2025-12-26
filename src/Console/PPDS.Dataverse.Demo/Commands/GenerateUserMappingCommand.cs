@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Xml.Linq;
 using Microsoft.Xrm.Sdk.Query;
+using PPDS.Dataverse.Demo.Infrastructure;
 using PPDS.Dataverse.Pooling;
 
 namespace PPDS.Dataverse.Demo.Commands;
@@ -26,40 +27,51 @@ public static class GenerateUserMappingCommand
             "--analyze",
             "Analyze user differences without generating mapping file");
 
+        // Use standardized options from GlobalOptionsExtensions
+        var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
+        var debugOption = GlobalOptionsExtensions.CreateDebugOption();
+
         command.AddOption(outputOption);
         command.AddOption(analyzeOnlyOption);
+        command.AddOption(verboseOption);
+        command.AddOption(debugOption);
 
-        command.SetHandler(async (string output, bool analyzeOnly) =>
+        command.SetHandler(async (string output, bool analyzeOnly, bool verbose, bool debug) =>
         {
-            Environment.ExitCode = await ExecuteAsync(output, analyzeOnly);
-        }, outputOption, analyzeOnlyOption);
+            var options = new GlobalOptions
+            {
+                Verbose = verbose,
+                Debug = debug
+            };
+            Environment.ExitCode = await ExecuteAsync(output, analyzeOnly, options);
+        }, outputOption, analyzeOnlyOption, verboseOption, debugOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(string outputPath, bool analyzeOnly)
+    public static async Task<int> ExecuteAsync(string outputPath, bool analyzeOnly, GlobalOptions options)
     {
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine("|       Generate User Mapping: Dev → QA                        |");
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine();
+        ConsoleWriter.Header("Generate User Mapping: Dev → QA");
 
         // Create pools for both environments
-        using var devHost = CommandBase.CreateHost("Dev");
-        using var qaHost = CommandBase.CreateHost("QA");
+        var devOptions = options with { Environment = "Dev" };
+        var qaOptions = options with { Environment = "QA" };
 
-        var devPool = CommandBase.GetConnectionPool(devHost);
-        var qaPool = CommandBase.GetConnectionPool(qaHost);
+        using var devHost = HostFactory.CreateHostForMigration(devOptions);
+        using var qaHost = HostFactory.CreateHostForMigration(qaOptions);
+
+        var devPool = HostFactory.GetConnectionPool(devHost, "Dev");
+        var qaPool = HostFactory.GetConnectionPool(qaHost, "QA");
 
         if (devPool == null)
         {
-            CommandBase.WriteError("Dev environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
+            ConsoleWriter.Error("Dev environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
         }
 
         if (qaPool == null)
         {
-            CommandBase.WriteError("QA environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
+            ConsoleWriter.Error("QA environment not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
         }
 
@@ -181,7 +193,7 @@ public static class GenerateUserMappingCommand
             // Generate mapping file
             Console.WriteLine($"  Generating mapping file: {outputPath}");
             GenerateMappingFile(outputPath, mappings);
-            CommandBase.WriteSuccess($"  Generated {mappings.Count} mappings");
+            ConsoleWriter.Success($"  Generated {mappings.Count} mappings");
             Console.WriteLine();
 
             Console.WriteLine("  Usage:");
@@ -191,7 +203,7 @@ public static class GenerateUserMappingCommand
         }
         catch (Exception ex)
         {
-            CommandBase.WriteError($"Error: {ex.Message}");
+            ConsoleWriter.Exception(ex, options.Debug);
             return 1;
         }
     }

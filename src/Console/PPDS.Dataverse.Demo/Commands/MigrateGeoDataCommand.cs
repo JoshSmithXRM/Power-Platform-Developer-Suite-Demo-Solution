@@ -324,14 +324,12 @@ public static class MigrateGeoDataCommand
                 ConsoleWriter.Section("Phase 2: Clean Target");
 
                 Console.WriteLine($"  Running clean-geo-data on {target}...");
+                // Create options for target environment with Conservative preset for deletes
+                var cleanOptions = options with { Environment = target, RatePreset = RateControlPreset.Conservative };
                 var cleanResult = await CleanGeoDataCommand.ExecuteAsync(
                     zipOnly: false,
                     confirm: true,
-                    parallelism: options.Parallelism,
-                    ratePreset: null, // Uses Conservative default for deletes
-                    verbose: options.Verbose,
-                    debug: options.Debug,
-                    environment: target);
+                    cleanOptions);
 
                 if (cleanResult != 0)
                 {

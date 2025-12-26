@@ -10,6 +10,7 @@ using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
 using PPDS.Dataverse.BulkOperations;
+using PPDS.Dataverse.Demo.Infrastructure;
 using PPDS.Dataverse.Pooling;
 using PPDS.Dataverse.Progress;
 
@@ -44,68 +45,61 @@ public static class LoadGeoDataCommand
             "--states-only",
             "Only load states (skip ZIP codes)");
 
-        var parallelismOption = new Option<int?>(
-            "--parallelism",
-            "Max parallel batches (uses SDK default if not specified)");
-
-        var verboseOption = new Option<bool>(
-            ["--verbose", "-v"],
-            "Enable verbose logging (operational: Connecting..., Processing...)");
-
-        var debugOption = new Option<bool>(
-            "--debug",
-            "Enable debug logging (diagnostic: parallelism, ceiling, internal state)");
-
-        var envOption = new Option<string?>(
-            aliases: ["--environment", "--env", "-e"],
-            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
+        // Use standardized options from GlobalOptionsExtensions
+        var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
+        var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
+        var debugOption = GlobalOptionsExtensions.CreateDebugOption();
+        var parallelismOption = GlobalOptionsExtensions.CreateParallelismOption();
 
         command.AddOption(limitOption);
         command.AddOption(skipDownloadOption);
         command.AddOption(statesOnlyOption);
-        command.AddOption(parallelismOption);
+        command.AddOption(envOption);
         command.AddOption(verboseOption);
         command.AddOption(debugOption);
-        command.AddOption(envOption);
+        command.AddOption(parallelismOption);
 
-        command.SetHandler(async (int? limit, bool skipDownload, bool statesOnly, int? parallelism, bool verbose, bool debug, string? environment) =>
+        command.SetHandler(async (int? limit, bool skipDownload, bool statesOnly, string? environment, bool verbose, bool debug, int? parallelism) =>
         {
-            Environment.ExitCode = await ExecuteAsync(limit, skipDownload, statesOnly, parallelism, verbose, debug, environment);
-        }, limitOption, skipDownloadOption, statesOnlyOption, parallelismOption, verboseOption, debugOption, envOption);
+            var options = new GlobalOptions
+            {
+                Environment = environment,
+                Verbose = verbose,
+                Debug = debug,
+                Parallelism = parallelism
+            };
+            Environment.ExitCode = await ExecuteAsync(limit, skipDownload, statesOnly, options);
+        }, limitOption, skipDownloadOption, statesOnlyOption, envOption, verboseOption, debugOption, parallelismOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(int? limit, bool skipDownload, bool statesOnly, int? parallelism = null, bool verbose = false, bool debug = false, string? environment = null)
+    public static async Task<int> ExecuteAsync(int? limit, bool skipDownload, bool statesOnly, GlobalOptions options)
     {
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine("|       Load Geographic Data for Volume Testing                |");
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine();
+        ConsoleWriter.Header("Load Geographic Data for Volume Testing");
 
         // Create host with SDK services for bulk operations
-        using var host = CommandBase.CreateHostForBulkOperations(environment, parallelism, verbose, debug);
+        using var host = HostFactory.CreateHostForBulkOperations(options);
         var pool = host.Services.GetRequiredService<IDataverseConnectionPool>();
         var bulkExecutor = host.Services.GetRequiredService<IBulkOperationExecutor>();
 
         if (!pool.IsEnabled)
         {
-            CommandBase.WriteError("Connection pool not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
+            ConsoleWriter.Error("Connection pool not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
         }
 
-        var envDisplay = CommandBase.ResolveEnvironment(host, environment);
-        Console.WriteLine($"  Environment: {envDisplay}");
+        Console.WriteLine($"  Environment: {options.Environment ?? "Dev (default)"}");
 
-        if (parallelism.HasValue)
+        if (options.Parallelism.HasValue)
         {
-            Console.WriteLine($"  Parallelism: {parallelism.Value}");
+            Console.WriteLine($"  Parallelism: {options.Parallelism.Value}");
         }
-        if (debug)
+        if (options.Debug)
         {
             Console.WriteLine("  Logging: Debug (diagnostic details)");
         }
-        else if (verbose)
+        else if (options.Verbose)
         {
             Console.WriteLine("  Logging: Verbose (operational messages)");
         }
@@ -229,7 +223,7 @@ public static class LoadGeoDataCommand
             Console.WriteLine("+-----------------------------------------------------------------+");
 
             // Build entities for upsert
-            var (entities, skipped) = BuildZipCodeEntities(zipCodes, stateMap, cityMap, verbose);
+            var (entities, skipped) = BuildZipCodeEntities(zipCodes, stateMap, cityMap, options.EffectiveVerbose);
 
             if (skipped > 0)
             {
@@ -289,7 +283,7 @@ public static class LoadGeoDataCommand
         }
         catch (Exception ex)
         {
-            CommandBase.WriteError($"Error: {ex.Message}");
+            ConsoleWriter.Exception(ex, options.Debug);
             return 1;
         }
     }

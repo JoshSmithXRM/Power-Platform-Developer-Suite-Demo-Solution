@@ -2,6 +2,7 @@ using System.CommandLine;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Metadata;
+using PPDS.Dataverse.Demo.Infrastructure;
 using PPDS.Dataverse.Pooling;
 
 namespace PPDS.Dataverse.Demo.Commands;
@@ -15,43 +16,54 @@ public static class CreateGeoSchemaCommand
 
     public static Command Create()
     {
+        var command = new Command("create-geo-schema", "Create geographic reference data tables for volume testing");
+
         var deleteFirstOption = new Option<bool>(
             "--delete-first",
             "Delete existing tables before creating (WARNING: destroys data)");
 
-        var envOption = new Option<string?>(
-            aliases: ["--environment", "--env", "-e"],
-            description: "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
+        // Use standardized options from GlobalOptionsExtensions
+        var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
+        var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
+        var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
-        var command = new Command("create-geo-schema", "Create geographic reference data tables for volume testing")
-        {
-            deleteFirstOption,
-            envOption
-        };
+        command.AddOption(deleteFirstOption);
+        command.AddOption(envOption);
+        command.AddOption(verboseOption);
+        command.AddOption(debugOption);
 
-        command.SetHandler(async (bool deleteFirst, string? environment) =>
+        command.SetHandler(async (bool deleteFirst, string? environment, bool verbose, bool debug) =>
         {
-            Environment.ExitCode = await ExecuteAsync(deleteFirst, environment);
-        }, deleteFirstOption, envOption);
+            var options = new GlobalOptions
+            {
+                Environment = environment,
+                Verbose = verbose,
+                Debug = debug
+            };
+            Environment.ExitCode = await ExecuteAsync(deleteFirst, options);
+        }, deleteFirstOption, envOption, verboseOption, debugOption);
 
         return command;
     }
 
-    public static async Task<int> ExecuteAsync(bool deleteFirst, string? environment = null)
+    public static async Task<int> ExecuteAsync(bool deleteFirst, GlobalOptions options)
     {
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine("|       Create Geographic Schema for Volume Testing            |");
-        Console.WriteLine("+==============================================================+");
-        Console.WriteLine();
+        ConsoleWriter.Header("Create Geographic Schema for Volume Testing");
 
-        using var host = CommandBase.CreateHost(environment);
-        var pool = CommandBase.GetConnectionPool(host);
+        using var host = HostFactory.CreateHostForMigration(options);
+        var pool = HostFactory.GetConnectionPool(host, options.Environment);
 
         if (pool == null)
+        {
+            ConsoleWriter.Error("Connection pool not configured. See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
             return 1;
+        }
 
-        var envDisplay = CommandBase.ResolveEnvironment(host, environment);
-        Console.WriteLine($"  Environment: {envDisplay}");
+        Console.WriteLine($"  Environment: {options.Environment ?? "Dev (default)"}");
+        if (options.Debug)
+            Console.WriteLine("  Logging: Debug");
+        else if (options.Verbose)
+            Console.WriteLine("  Logging: Verbose");
         Console.WriteLine();
 
         try
@@ -103,11 +115,7 @@ public static class CreateGeoSchemaCommand
         }
         catch (Exception ex)
         {
-            CommandBase.WriteError($"Error: {ex.Message}");
-            if (ex.InnerException != null)
-            {
-                Console.WriteLine($"    Inner: {ex.InnerException.Message}");
-            }
+            ConsoleWriter.Exception(ex, options.Debug);
             return 1;
         }
     }
@@ -119,7 +127,7 @@ public static class CreateGeoSchemaCommand
             Console.Write($"    Deleting {logicalName}... ");
             var request = new DeleteEntityRequest { LogicalName = logicalName };
             await client.ExecuteAsync(request);
-            CommandBase.WriteSuccess("Deleted");
+            ConsoleWriter.Success("Deleted");
         }
         catch (Exception ex) when (ex.Message.Contains("Could not find") || ex.Message.Contains("does not exist"))
         {
@@ -194,7 +202,7 @@ public static class CreateGeoSchemaCommand
         await CreateAlternateKeyAsync(client, logicalName, "ppds_ak_abbreviation", "Abbreviation",
             ["ppds_abbreviation"]);
 
-        CommandBase.WriteSuccess("Created");
+        ConsoleWriter.Success("Created");
     }
 
     private static async Task CreateCityTableAsync(IPooledClient client)
@@ -247,7 +255,7 @@ public static class CreateGeoSchemaCommand
         await CreateAlternateKeyAsync(client, logicalName, "ppds_ak_name_state", "City-State",
             ["ppds_name", "ppds_stateid"]);
 
-        CommandBase.WriteSuccess("Created");
+        ConsoleWriter.Success("Created");
     }
 
     private static async Task CreateZipCodeTableAsync(IPooledClient client)
@@ -314,7 +322,7 @@ public static class CreateGeoSchemaCommand
         await CreateAlternateKeyAsync(client, logicalName, "ppds_ak_code", "ZIP Code",
             ["ppds_code"]);
 
-        CommandBase.WriteSuccess("Created");
+        ConsoleWriter.Success("Created");
     }
 
     private static async Task CreateStringAttributeAsync(IPooledClient client, string entityLogicalName,
@@ -457,5 +465,7 @@ public static class CreateGeoSchemaCommand
         };
 
         await client.ExecuteAsync(request);
+        // Note: Alternate keys activate asynchronously. They will be ready by the time
+        // load-geo-data runs (typically within seconds on empty tables).
     }
 }
