@@ -488,18 +488,17 @@
             <Description description="Unique identifier for the user that owns the record." languagecode="1033" />
           </Descriptions>
         </attribute>
-        <attribute PhysicalName="ppds_Cityname">
-          <Type>nvarchar</Type>
-          <Name>ppds_cityname</Name>
-          <LogicalName>ppds_cityname</LogicalName>
-          <RequiredLevel>none</RequiredLevel>
+        <attribute PhysicalName="ppds_Cityid">
+          <Type>lookup</Type>
+          <Name>ppds_cityid</Name>
+          <LogicalName>ppds_cityid</LogicalName>
+          <RequiredLevel>required</RequiredLevel>
           <DisplayMask>ValidForAdvancedFind|ValidForForm|ValidForGrid</DisplayMask>
-          <ImeMode>auto</ImeMode>
           <ValidForUpdateApi>1</ValidForUpdateApi>
           <ValidForReadApi>1</ValidForReadApi>
           <ValidForCreateApi>1</ValidForCreateApi>
           <IsCustomField>1</IsCustomField>
-          <IsAuditEnabled>1</IsAuditEnabled>
+          <IsAuditEnabled>0</IsAuditEnabled>
           <IsSecured>0</IsSecured>
           <IntroducedVersion>1.0</IntroducedVersion>
           <IsCustomizable>1</IsCustomizable>
@@ -512,21 +511,18 @@
           <IsSortableEnabled>0</IsSortableEnabled>
           <CanModifyGlobalFilterSettings>1</CanModifyGlobalFilterSettings>
           <CanModifyIsSortableSettings>1</CanModifyIsSortableSettings>
+          <ExternalName>ppds_cityid</ExternalName>
           <IsDataSourceSecret>0</IsDataSourceSecret>
           <AutoNumberFormat></AutoNumberFormat>
           <IsSearchable>0</IsSearchable>
           <IsFilterable>0</IsFilterable>
           <IsRetrievable>0</IsRetrievable>
           <IsLocalizable>0</IsLocalizable>
-          <Format>text</Format>
-          <MaxLength>200</MaxLength>
-          <Length>400</Length>
+          <LookupStyle>single</LookupStyle>
+          <LookupTypes />
           <displaynames>
-            <displayname description="City Name" languagecode="1033" />
+            <displayname description="City" languagecode="1033" />
           </displaynames>
-          <Descriptions>
-            <Description description="Primary city name for this ZIP code" languagecode="1033" />
-          </Descriptions>
         </attribute>
         <attribute PhysicalName="ppds_Code">
           <Type>nvarchar</Type>
@@ -688,46 +684,6 @@
             <Description description="Longitude coordinate" languagecode="1033" />
           </Descriptions>
         </attribute>
-        <attribute PhysicalName="ppds_Population">
-          <Type>int</Type>
-          <Name>ppds_population</Name>
-          <LogicalName>ppds_population</LogicalName>
-          <RequiredLevel>none</RequiredLevel>
-          <DisplayMask>ValidForAdvancedFind|ValidForForm|ValidForGrid</DisplayMask>
-          <ImeMode>disabled</ImeMode>
-          <ValidForUpdateApi>1</ValidForUpdateApi>
-          <ValidForReadApi>1</ValidForReadApi>
-          <ValidForCreateApi>1</ValidForCreateApi>
-          <IsCustomField>1</IsCustomField>
-          <IsAuditEnabled>1</IsAuditEnabled>
-          <IsSecured>0</IsSecured>
-          <IntroducedVersion>1.0</IntroducedVersion>
-          <IsCustomizable>1</IsCustomizable>
-          <IsRenameable>1</IsRenameable>
-          <CanModifySearchSettings>1</CanModifySearchSettings>
-          <CanModifyRequirementLevelSettings>1</CanModifyRequirementLevelSettings>
-          <CanModifyAdditionalSettings>1</CanModifyAdditionalSettings>
-          <SourceType>0</SourceType>
-          <IsGlobalFilterEnabled>0</IsGlobalFilterEnabled>
-          <IsSortableEnabled>0</IsSortableEnabled>
-          <CanModifyGlobalFilterSettings>1</CanModifyGlobalFilterSettings>
-          <CanModifyIsSortableSettings>1</CanModifyIsSortableSettings>
-          <IsDataSourceSecret>0</IsDataSourceSecret>
-          <AutoNumberFormat></AutoNumberFormat>
-          <IsSearchable>0</IsSearchable>
-          <IsFilterable>0</IsFilterable>
-          <IsRetrievable>0</IsRetrievable>
-          <IsLocalizable>0</IsLocalizable>
-          <Format></Format>
-          <MinValue>0</MinValue>
-          <MaxValue>2147483647</MaxValue>
-          <displaynames>
-            <displayname description="Population" languagecode="1033" />
-          </displaynames>
-          <Descriptions>
-            <Description description="ZIP code population" languagecode="1033" />
-          </Descriptions>
-        </attribute>
         <attribute PhysicalName="ppds_Stateid">
           <Type>lookup</Type>
           <Name>ppds_stateid</Name>
@@ -763,46 +719,6 @@
           <displaynames>
             <displayname description="State" languagecode="1033" />
           </displaynames>
-        </attribute>
-        <attribute PhysicalName="ppds_Timezone">
-          <Type>nvarchar</Type>
-          <Name>ppds_timezone</Name>
-          <LogicalName>ppds_timezone</LogicalName>
-          <RequiredLevel>none</RequiredLevel>
-          <DisplayMask>ValidForAdvancedFind|ValidForForm|ValidForGrid</DisplayMask>
-          <ImeMode>auto</ImeMode>
-          <ValidForUpdateApi>1</ValidForUpdateApi>
-          <ValidForReadApi>1</ValidForReadApi>
-          <ValidForCreateApi>1</ValidForCreateApi>
-          <IsCustomField>1</IsCustomField>
-          <IsAuditEnabled>1</IsAuditEnabled>
-          <IsSecured>0</IsSecured>
-          <IntroducedVersion>1.0</IntroducedVersion>
-          <IsCustomizable>1</IsCustomizable>
-          <IsRenameable>1</IsRenameable>
-          <CanModifySearchSettings>1</CanModifySearchSettings>
-          <CanModifyRequirementLevelSettings>1</CanModifyRequirementLevelSettings>
-          <CanModifyAdditionalSettings>1</CanModifyAdditionalSettings>
-          <SourceType>0</SourceType>
-          <IsGlobalFilterEnabled>0</IsGlobalFilterEnabled>
-          <IsSortableEnabled>0</IsSortableEnabled>
-          <CanModifyGlobalFilterSettings>1</CanModifyGlobalFilterSettings>
-          <CanModifyIsSortableSettings>1</CanModifyIsSortableSettings>
-          <IsDataSourceSecret>0</IsDataSourceSecret>
-          <AutoNumberFormat></AutoNumberFormat>
-          <IsSearchable>0</IsSearchable>
-          <IsFilterable>0</IsFilterable>
-          <IsRetrievable>0</IsRetrievable>
-          <IsLocalizable>0</IsLocalizable>
-          <Format>text</Format>
-          <MaxLength>50</MaxLength>
-          <Length>100</Length>
-          <displaynames>
-            <displayname description="Timezone" languagecode="1033" />
-          </displaynames>
-          <Descriptions>
-            <Description description="Timezone identifier" languagecode="1033" />
-          </Descriptions>
         </attribute>
         <attribute PhysicalName="ppds_ZipCodeId">
           <Type>primarykey</Type>

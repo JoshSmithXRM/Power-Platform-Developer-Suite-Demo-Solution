@@ -16,6 +16,7 @@
   <EntityRelationship Name="owner_ppds_demorecord" />
   <EntityRelationship Name="owner_ppds_state" />
   <EntityRelationship Name="owner_ppds_zipcode" />
+  <EntityRelationship Name="ppds_ppds_city_ppds_zipcode" />
   <EntityRelationship Name="ppds_ppds_state_ppds_city" />
   <EntityRelationship Name="ppds_ppds_state_ppds_zipcode" />
   <EntityRelationship Name="team_ppds_city" />

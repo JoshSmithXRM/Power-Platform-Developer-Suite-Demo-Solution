@@ -528,46 +528,6 @@
             <Description description="Two-letter state abbreviation (e.g., CA)" languagecode="1033" />
           </Descriptions>
         </attribute>
-        <attribute PhysicalName="ppds_Fipscode">
-          <Type>nvarchar</Type>
-          <Name>ppds_fipscode</Name>
-          <LogicalName>ppds_fipscode</LogicalName>
-          <RequiredLevel>none</RequiredLevel>
-          <DisplayMask>ValidForAdvancedFind|ValidForForm|ValidForGrid</DisplayMask>
-          <ImeMode>auto</ImeMode>
-          <ValidForUpdateApi>1</ValidForUpdateApi>
-          <ValidForReadApi>1</ValidForReadApi>
-          <ValidForCreateApi>1</ValidForCreateApi>
-          <IsCustomField>1</IsCustomField>
-          <IsAuditEnabled>1</IsAuditEnabled>
-          <IsSecured>0</IsSecured>
-          <IntroducedVersion>1.0</IntroducedVersion>
-          <IsCustomizable>1</IsCustomizable>
-          <IsRenameable>1</IsRenameable>
-          <CanModifySearchSettings>1</CanModifySearchSettings>
-          <CanModifyRequirementLevelSettings>1</CanModifyRequirementLevelSettings>
-          <CanModifyAdditionalSettings>1</CanModifyAdditionalSettings>
-          <SourceType>0</SourceType>
-          <IsGlobalFilterEnabled>0</IsGlobalFilterEnabled>
-          <IsSortableEnabled>0</IsSortableEnabled>
-          <CanModifyGlobalFilterSettings>1</CanModifyGlobalFilterSettings>
-          <CanModifyIsSortableSettings>1</CanModifyIsSortableSettings>
-          <IsDataSourceSecret>0</IsDataSourceSecret>
-          <AutoNumberFormat></AutoNumberFormat>
-          <IsSearchable>0</IsSearchable>
-          <IsFilterable>0</IsFilterable>
-          <IsRetrievable>0</IsRetrievable>
-          <IsLocalizable>0</IsLocalizable>
-          <Format>text</Format>
-          <MaxLength>2</MaxLength>
-          <Length>4</Length>
-          <displaynames>
-            <displayname description="FIPS Code" languagecode="1033" />
-          </displaynames>
-          <Descriptions>
-            <Description description="Federal Information Processing Standard code" languagecode="1033" />
-          </Descriptions>
-        </attribute>
         <attribute PhysicalName="ppds_Name">
           <Type>nvarchar</Type>
           <Name>ppds_name</Name>
@@ -606,46 +566,6 @@
           </displaynames>
           <Descriptions>
             <Description description="State name (e.g., California)" languagecode="1033" />
-          </Descriptions>
-        </attribute>
-        <attribute PhysicalName="ppds_Population">
-          <Type>int</Type>
-          <Name>ppds_population</Name>
-          <LogicalName>ppds_population</LogicalName>
-          <RequiredLevel>none</RequiredLevel>
-          <DisplayMask>ValidForAdvancedFind|ValidForForm|ValidForGrid</DisplayMask>
-          <ImeMode>disabled</ImeMode>
-          <ValidForUpdateApi>1</ValidForUpdateApi>
-          <ValidForReadApi>1</ValidForReadApi>
-          <ValidForCreateApi>1</ValidForCreateApi>
-          <IsCustomField>1</IsCustomField>
-          <IsAuditEnabled>1</IsAuditEnabled>
-          <IsSecured>0</IsSecured>
-          <IntroducedVersion>1.0</IntroducedVersion>
-          <IsCustomizable>1</IsCustomizable>
-          <IsRenameable>1</IsRenameable>
-          <CanModifySearchSettings>1</CanModifySearchSettings>
-          <CanModifyRequirementLevelSettings>1</CanModifyRequirementLevelSettings>
-          <CanModifyAdditionalSettings>1</CanModifyAdditionalSettings>
-          <SourceType>0</SourceType>
-          <IsGlobalFilterEnabled>0</IsGlobalFilterEnabled>
-          <IsSortableEnabled>0</IsSortableEnabled>
-          <CanModifyGlobalFilterSettings>1</CanModifyGlobalFilterSettings>
-          <CanModifyIsSortableSettings>1</CanModifyIsSortableSettings>
-          <IsDataSourceSecret>0</IsDataSourceSecret>
-          <AutoNumberFormat></AutoNumberFormat>
-          <IsSearchable>0</IsSearchable>
-          <IsFilterable>0</IsFilterable>
-          <IsRetrievable>0</IsRetrievable>
-          <IsLocalizable>0</IsLocalizable>
-          <Format></Format>
-          <MinValue>0</MinValue>
-          <MaxValue>2147483647</MaxValue>
-          <displaynames>
-            <displayname description="Population" languagecode="1033" />
-          </displaynames>
-          <Descriptions>
-            <Description description="State population" languagecode="1033" />
           </Descriptions>
         </attribute>
         <attribute PhysicalName="ppds_StateId">
