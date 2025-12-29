@@ -60,9 +60,11 @@ rootCommand.SetHandler(() =>
     Console.WriteLine("  dotnet run -- migrate-to-qa --dry-run");
     Console.WriteLine();
     Console.WriteLine("Configuration:");
-    Console.WriteLine("  Connections configured via .NET User Secrets.");
-    Console.WriteLine("  Pool: Dataverse:Connections:0:ConnectionString");
-    Console.WriteLine("  Envs: Environments:Dev:ConnectionString, Environments:QA:ConnectionString");
+    Console.WriteLine("  Connections configured via .NET User Secrets (UserSecretsId: ppds-dataverse-demo)");
+    Console.WriteLine("  Dataverse:Environments:{env}:Url              - Environment URL");
+    Console.WriteLine("  Dataverse:Environments:{env}:Connections:N:*  - ClientId, ClientSecret");
+    Console.WriteLine("  Dataverse:DefaultEnvironment                  - Default for pool-based commands");
+    Console.WriteLine("  See: docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
     Console.WriteLine();
 });
 

@@ -1,58 +1,82 @@
 # PPDS.Dataverse Demo
 
-Demonstrates PPDS.Dataverse connection pooling with a simple WhoAmI request.
+Demo console app showcasing PPDS.Dataverse connection pooling, bulk operations, and PPDS.Migration data migration workflows.
 
-## Setup
+## Quick Start
 
-1. Create `appsettings.Development.json` with your connection string:
+```bash
+# Configure credentials (one-time setup)
+cd src/Console/PPDS.Dataverse.Demo
+dotnet user-secrets set "Dataverse:Environments:Dev:Url" "https://yourorg.crm.dynamics.com"
+dotnet user-secrets set "Dataverse:Environments:Dev:Connections:0:ClientId" "your-client-id"
+dotnet user-secrets set "Dataverse:Environments:Dev:Connections:0:ClientSecret" "your-secret"
+
+# Test connectivity
+dotnet run -- whoami
+```
+
+## Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `whoami` | Test connectivity with WhoAmI request |
+| `seed` | Create sample accounts and contacts |
+| `clean` | Remove sample data (`--env QA` for other environments) |
+| `create-geo-schema` | Create geographic tables (state, city, zipcode) |
+| `load-geo-data` | Download and load 42K US ZIP codes |
+| `count-geo-data` | Display record counts for geo tables |
+| `clean-geo-data` | Bulk delete geographic data |
+| `export-geo-data` | Export geo data to portable ZIP package |
+| `import-geo-data` | Import geo data from ZIP package |
+| `migrate-geo-data` | Full migration workflow (export + import + verify) |
+| `test-migration` | End-to-end test of PPDS.Migration library |
+| `demo-features` | Demo migration features (M2M, filtering, etc.) |
+| `migrate-to-qa` | Export from Dev and import to QA |
+| `generate-user-mapping` | Generate user mapping for cross-env migration |
+
+## Configuration
+
+This app uses .NET User Secrets with a multi-environment structure:
 
 ```json
 {
   "Dataverse": {
-    "Connections": [
-      {
-        "Name": "Primary",
-        "ConnectionString": "AuthType=ClientSecret;Url=https://yourorg.crm.dynamics.com;ClientId=xxx;ClientSecret=xxx"
+    "DefaultEnvironment": "Dev",
+    "Environments": {
+      "Dev": {
+        "Url": "https://dev.crm.dynamics.com",
+        "Connections": [
+          { "ClientId": "...", "ClientSecret": "..." }
+        ]
+      },
+      "QA": {
+        "Url": "https://qa.crm.dynamics.com",
+        "Connections": [
+          { "ClientId": "...", "ClientSecret": "..." }
+        ]
       }
-    ]
+    }
   }
 }
 ```
 
-2. Run the demo:
+See [LOCAL_DEVELOPMENT_GUIDE.md](../../docs/guides/LOCAL_DEVELOPMENT_GUIDE.md) for detailed setup instructions.
+
+## Examples
 
 ```bash
-dotnet run --project src/Console/PPDS.Dataverse.Demo
-```
+# Basic connectivity test
+dotnet run -- whoami
 
-## Connection String Formats
+# Seed sample data
+dotnet run -- seed
 
-**Client Secret (Application User):**
-```
-AuthType=ClientSecret;Url=https://yourorg.crm.dynamics.com;ClientId=<app-id>;ClientSecret=<secret>
-```
+# Load geographic data (42K records)
+dotnet run -- load-geo-data
 
-**Interactive (Browser Login):**
-```
-AuthType=OAuth;Url=https://yourorg.crm.dynamics.com;AppId=51f81489-12ee-4a9e-aaae-a2591f45987d;RedirectUri=http://localhost;LoginPrompt=Auto
-```
+# Cross-environment migration (dry run)
+dotnet run -- migrate-to-qa --dry-run
 
-## Expected Output
-
-```
-PPDS.Dataverse Connection Pool Demo
-====================================
-
-Connecting to Dataverse...
-
-WhoAmI Result:
-  User ID:         xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-  Organization ID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-  Business Unit:   xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-
-Pool Statistics:
-  Total Connections: 1
-  Active:            0
-  Idle:              1
-  Requests Served:   1
+# Export geo data for migration
+dotnet run -- export-geo-data --output geo-backup.zip
 ```
