@@ -6,7 +6,6 @@ using PPDS.Dataverse.BulkOperations;
 using PPDS.Dataverse.Demo.Infrastructure;
 using PPDS.Dataverse.Pooling;
 using PPDS.Dataverse.Progress;
-using PPDS.Dataverse.Resilience;
 
 namespace PPDS.Dataverse.Demo.Commands;
 
@@ -15,8 +14,6 @@ namespace PPDS.Dataverse.Demo.Commands;
 /// Deletes in dependency order: ZIP codes → cities → states.
 /// Uses IBulkOperationExecutor.DeleteMultipleAsync for optimal throughput with
 /// connection pooling, throttle-aware routing, and progress reporting.
-///
-/// Defaults to Conservative rate preset for safe delete operations.
 /// </summary>
 public static class CleanGeoDataCommand
 {
@@ -37,7 +34,6 @@ public static class CleanGeoDataCommand
         var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
         var debugOption = GlobalOptionsExtensions.CreateDebugOption();
         var parallelismOption = GlobalOptionsExtensions.CreateParallelismOption();
-        var ratePresetOption = GlobalOptionsExtensions.CreateRatePresetOption(defaultPreset: "Conservative for deletes");
 
         command.AddOption(zipOnlyOption);
         command.AddOption(confirmOption);
@@ -45,37 +41,18 @@ public static class CleanGeoDataCommand
         command.AddOption(verboseOption);
         command.AddOption(debugOption);
         command.AddOption(parallelismOption);
-        command.AddOption(ratePresetOption);
 
-        command.SetHandler(async (bool zipOnly, bool confirm, string? environment, bool verbose, bool debug, int? parallelism, string? ratePreset) =>
+        command.SetHandler(async (bool zipOnly, bool confirm, string? environment, bool verbose, bool debug, int? parallelism) =>
         {
-            // Parse rate preset - default to Conservative for delete operations (safer)
-            RateControlPreset? effectivePreset = null;
-            if (!string.IsNullOrEmpty(ratePreset))
-            {
-                if (!Enum.TryParse<RateControlPreset>(ratePreset, ignoreCase: true, out var parsed))
-                {
-                    ConsoleWriter.Error($"Invalid rate preset: {ratePreset}. Valid values: Balanced, Conservative, Aggressive");
-                    Environment.ExitCode = 1;
-                    return;
-                }
-                effectivePreset = parsed;
-            }
-            else
-            {
-                effectivePreset = RateControlPreset.Conservative; // Default for deletes
-            }
-
             var options = new GlobalOptions
             {
                 Environment = environment,
                 Verbose = verbose,
                 Debug = debug,
-                Parallelism = parallelism,
-                RatePreset = effectivePreset
+                Parallelism = parallelism
             };
             Environment.ExitCode = await ExecuteAsync(zipOnly, confirm, options);
-        }, zipOnlyOption, confirmOption, envOption, verboseOption, debugOption, parallelismOption, ratePresetOption);
+        }, zipOnlyOption, confirmOption, envOption, verboseOption, debugOption, parallelismOption);
 
         return command;
     }
@@ -99,7 +76,6 @@ public static class CleanGeoDataCommand
         }
 
         Console.WriteLine($"  Environment: {options.Environment ?? "Dev (default)"}");
-        Console.WriteLine($"  Rate Preset: {options.RatePreset ?? RateControlPreset.Conservative}");
 
         if (options.Parallelism.HasValue)
         {

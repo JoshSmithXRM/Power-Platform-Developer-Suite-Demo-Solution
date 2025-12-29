@@ -3,7 +3,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using PPDS.Dataverse.Demo.Infrastructure;
 using PPDS.Dataverse.Pooling;
-using PPDS.Dataverse.Resilience;
 
 namespace PPDS.Dataverse.Demo.Commands;
 
@@ -47,21 +46,18 @@ public abstract class CommandBase
     /// <param name="parallelism">Max parallel batches. If null, uses SDK default.</param>
     /// <param name="verbose">Enable info-level logging for operational messages (Connecting..., Processing...).</param>
     /// <param name="debug">Enable debug-level logging for diagnostic details (parallelism, ceiling, internal state).</param>
-    /// <param name="ratePreset">Adaptive rate control preset. If null, uses config default.</param>
     public static IHost CreateHostForBulkOperations(
         string? environment = null,
         int? parallelism = null,
         bool verbose = false,
-        bool debug = false,
-        RateControlPreset? ratePreset = null)
+        bool debug = false)
     {
         return HostFactory.CreateHostForBulkOperations(new GlobalOptions
         {
             Environment = environment,
             Parallelism = parallelism,
             Verbose = verbose,
-            Debug = debug,
-            RatePreset = ratePreset
+            Debug = debug
         });
     }
 

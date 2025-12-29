@@ -36,10 +36,6 @@ All environments live under `Dataverse:Environments:*`. Each environment has its
 {
   "Dataverse": {
     "DefaultEnvironment": "Dev",
-    "AdaptiveRate": {
-      "Preset": "Balanced",
-      "ExecutionTimeCeilingFactor": 200
-    },
     "Environments": {
       "Dev": {
         "Url": "https://dev.crm.dynamics.com",
@@ -232,55 +228,6 @@ if (!result.IsSuccess)
 }
 
 // Available properties: SuccessCount, FailureCount, Duration, CreatedCount, UpdatedCount
-```
-
----
-
-## 🎚️ Adaptive Rate Control (PPDS.Dataverse)
-
-The SDK automatically adjusts batch sizes based on API response times to maximize throughput while avoiding throttles.
-
-### Presets
-
-| Preset       | Use Case                                    | Behavior                    |
-| ------------ | ------------------------------------------- | --------------------------- |
-| Conservative | Production bulk jobs, overnight migrations  | Prioritize avoiding throttles |
-| Balanced     | General purpose, mixed workloads            | Balance throughput and safety |
-| Aggressive   | Dev/test, time-critical with monitoring     | Prioritize speed            |
-
-### Configuration
-
-```json
-{
-  "Dataverse": {
-    "AdaptiveRate": {
-      "Preset": "Balanced",
-      "ExecutionTimeCeilingFactor": 200
-    }
-  }
-}
-```
-
-Start with a preset, override individual settings as needed:
-
-| Setting                      | Range     | Effect                              |
-| ---------------------------- | --------- | ----------------------------------- |
-| `ExecutionTimeCeilingFactor` | 180-320   | Lower = safer, higher = faster      |
-| `SlowBatchThresholdMs`       | 8000-11000| When to consider batch "slow"       |
-| `DecreaseFactor`             | 0.4-0.6   | How much to reduce on slow batch    |
-| `StabilizationBatches`       | 2-5       | Batches before increasing again     |
-| `MinIncreaseInterval`        | 3s-8s     | Minimum time between increases      |
-
-### Command-Line Override
-
-Delete operations default to Conservative for safety:
-
-```bash
-# Uses Conservative (default for deletes)
-dotnet run -- clean-geo-data
-
-# Override for speed
-dotnet run -- clean-geo-data --rate-preset Aggressive
 ```
 
 ---

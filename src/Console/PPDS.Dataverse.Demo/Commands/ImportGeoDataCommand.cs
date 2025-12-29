@@ -5,7 +5,6 @@ using System.Xml.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using PPDS.Dataverse.Demo.Infrastructure;
 using PPDS.Dataverse.Pooling;
-using PPDS.Dataverse.Resilience;
 using PPDS.Migration.Import;
 using PPDS.Migration.Progress;
 
@@ -157,12 +156,11 @@ public static class ImportGeoDataCommand
                 {
                     Console.WriteLine($"  Removing {beforeSummary.TotalCount:N0} existing records...");
 
-                    // Pass through GlobalOptions to CleanGeoDataCommand (with Conservative preset for deletes)
-                    var cleanOptions = options with { RatePreset = RateControlPreset.Conservative };
+                    // Pass through GlobalOptions to CleanGeoDataCommand
                     var cleanResult = await CleanGeoDataCommand.ExecuteAsync(
                         zipOnly: false,
                         confirm: true,
-                        cleanOptions);
+                        options);
 
                     if (cleanResult != 0)
                     {

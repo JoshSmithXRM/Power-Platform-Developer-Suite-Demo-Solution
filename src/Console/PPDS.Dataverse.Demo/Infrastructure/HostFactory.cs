@@ -51,9 +51,9 @@ public static class HostFactory
 
     /// <summary>
     /// Creates a host configured for bulk operations with optimal settings.
-    /// Includes bulk operation executor, adaptive rate control, and progress reporting.
+    /// Includes bulk operation executor and progress reporting.
     /// </summary>
-    /// <param name="options">Global options (environment, logging, parallelism, rate control).</param>
+    /// <param name="options">Global options (environment, logging, parallelism).</param>
     public static IHost CreateHostForBulkOperations(GlobalOptions options)
     {
         return Host.CreateDefaultBuilder()
@@ -69,11 +69,6 @@ public static class HostFactory
                     if (options.Parallelism.HasValue)
                     {
                         opts.BulkOperations.MaxParallelBatches = options.Parallelism.Value;
-                    }
-
-                    if (options.RatePreset.HasValue)
-                    {
-                        opts.AdaptiveRate.Preset = options.RatePreset.Value;
                     }
                 });
             })

@@ -1,5 +1,3 @@
-using PPDS.Dataverse.Resilience;
-
 namespace PPDS.Dataverse.Demo.Infrastructure;
 
 /// <summary>
@@ -37,12 +35,6 @@ public record GlobalOptions
     /// If null, uses SDK default (based on server recommendation).
     /// </summary>
     public int? Parallelism { get; init; }
-
-    /// <summary>
-    /// Adaptive rate control preset for bulk operations.
-    /// If null, uses configuration default.
-    /// </summary>
-    public RateControlPreset? RatePreset { get; init; }
 
     /// <summary>
     /// Effective verbose setting (Debug implies Verbose).
@@ -108,21 +100,4 @@ public static class GlobalOptionsExtensions
             description: description ?? "Max parallel batches (uses SDK default if not specified)");
     }
 
-    /// <summary>
-    /// Creates the standard --rate-preset option.
-    /// </summary>
-    public static System.CommandLine.Option<string?> CreateRatePresetOption(
-        string? description = null,
-        string? defaultPreset = null)
-    {
-        var desc = description ?? "Adaptive rate preset: Balanced, Conservative, Aggressive";
-        if (defaultPreset != null)
-        {
-            desc += $" (default: {defaultPreset})";
-        }
-
-        return new System.CommandLine.Option<string?>(
-            name: "--rate-preset",
-            description: desc);
-    }
 }

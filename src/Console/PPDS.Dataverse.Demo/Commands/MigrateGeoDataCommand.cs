@@ -7,7 +7,6 @@ using PPDS.Dataverse.BulkOperations;
 using PPDS.Dataverse.Demo.Infrastructure;
 using PPDS.Dataverse.Pooling;
 using PPDS.Dataverse.Progress;
-using PPDS.Dataverse.Resilience;
 
 namespace PPDS.Dataverse.Demo.Commands;
 
@@ -324,8 +323,8 @@ public static class MigrateGeoDataCommand
                 ConsoleWriter.Section("Phase 2: Clean Target");
 
                 Console.WriteLine($"  Running clean-geo-data on {target}...");
-                // Create options for target environment with Conservative preset for deletes
-                var cleanOptions = options with { Environment = target, RatePreset = RateControlPreset.Conservative };
+                // Create options for target environment
+                var cleanOptions = options with { Environment = target };
                 var cleanResult = await CleanGeoDataCommand.ExecuteAsync(
                     zipOnly: false,
                     confirm: true,
