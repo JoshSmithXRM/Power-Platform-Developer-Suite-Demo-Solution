@@ -8,9 +8,7 @@
 // Uses the same .NET User Secrets as the demo app (UserSecretsId: ppds-dataverse-demo)
 // No additional configuration needed if you've already set up the demo app.
 //
-// To configure (if needed):
-//   cd src/Console/PPDS.Dataverse.Demo
-//   dotnet user-secrets set "Dataverse:Connections:0:ConnectionString" "AuthType=..."
+// See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md for configuration details.
 //
 // =============================================================================
 
@@ -33,21 +31,31 @@ var config = new ConfigurationBuilder()
     .AddEnvironmentVariables()               // Fallback to env vars
     .Build();
 
-var connectionString = config["Dataverse:Connections:0:ConnectionString"];
+// Default to 'Dev' environment for scratchpad scripts
+const string env = "Dev";
+var url = config[$"Dataverse:Environments:{env}:Url"];
+var clientId = config[$"Dataverse:Environments:{env}:Connections:0:ClientId"];
+var clientSecret = config[$"Dataverse:Environments:{env}:Connections:0:ClientSecret"];
 
-if (string.IsNullOrEmpty(connectionString))
+if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
 {
     Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.WriteLine("No connection string configured!");
+    Console.WriteLine($"Connection not configured for '{env}' environment!");
     Console.WriteLine();
     Console.ResetColor();
     Console.WriteLine("Configure using .NET User Secrets:");
     Console.WriteLine();
     Console.WriteLine("  cd src/Console/PPDS.Dataverse.Demo");
-    Console.WriteLine("  dotnet user-secrets set \"Dataverse:Connections:0:ConnectionString\" \"AuthType=ClientSecret;Url=...\"");
+    Console.WriteLine($"  dotnet user-secrets set \"Dataverse:Environments:{env}:Url\" \"https://yourorg.crm.dynamics.com\"");
+    Console.WriteLine($"  dotnet user-secrets set \"Dataverse:Environments:{env}:Connections:0:ClientId\" \"your-client-id\"");
+    Console.WriteLine($"  dotnet user-secrets set \"Dataverse:Environments:{env}:Connections:0:ClientSecret\" \"your-secret\"");
+    Console.WriteLine();
+    Console.WriteLine("See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md for details.");
     Console.WriteLine();
     return;
 }
+
+var connectionString = $"AuthType=ClientSecret;Url={url};ClientId={clientId};ClientSecret={clientSecret}";
 
 Console.WriteLine("Connecting to Dataverse...");
 Console.WriteLine();

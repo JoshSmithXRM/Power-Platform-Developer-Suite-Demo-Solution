@@ -238,7 +238,6 @@ public static class MigrateGeoDataCommand
 
         using var sourceHost = CommandBase.CreateHostForBulkOperations(sourceOptions);
         var sourcePool = sourceHost.Services.GetRequiredService<IDataverseConnectionPool>();
-        var sourceBulk = sourceHost.Services.GetRequiredService<IBulkOperationExecutor>();
 
         if (!sourcePool.IsEnabled)
         {
@@ -246,20 +245,19 @@ public static class MigrateGeoDataCommand
             return 1;
         }
 
-        Microsoft.Extensions.Hosting.IHost? targetHost = null;
+        // Use using statement for exception-safe disposal
+        using var targetHost = dryRun ? null : CommandBase.CreateHostForBulkOperations(targetOptions);
         IDataverseConnectionPool? targetPool = null;
         IBulkOperationExecutor? targetBulk = null;
 
         if (!dryRun)
         {
-            targetHost = CommandBase.CreateHostForBulkOperations(targetOptions);
-            targetPool = targetHost.Services.GetRequiredService<IDataverseConnectionPool>();
+            targetPool = targetHost!.Services.GetRequiredService<IDataverseConnectionPool>();
             targetBulk = targetHost.Services.GetRequiredService<IBulkOperationExecutor>();
 
             if (!targetPool.IsEnabled)
             {
                 ConsoleWriter.Error($"{target} environment not configured.");
-                targetHost.Dispose();
                 return 1;
             }
         }
@@ -557,10 +555,6 @@ public static class MigrateGeoDataCommand
         {
             ConsoleWriter.Exception(ex, options.Debug);
             return 1;
-        }
-        finally
-        {
-            targetHost?.Dispose();
         }
     }
 

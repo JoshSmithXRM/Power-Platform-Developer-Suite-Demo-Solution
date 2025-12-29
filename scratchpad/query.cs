@@ -30,14 +30,20 @@ var config = new ConfigurationBuilder()
     .AddEnvironmentVariables()
     .Build();
 
-var connectionString = config["Dataverse:Connections:0:ConnectionString"];
+// Default to 'Dev' environment for scratchpad scripts
+const string env = "Dev";
+var url = config[$"Dataverse:Environments:{env}:Url"];
+var clientId = config[$"Dataverse:Environments:{env}:Connections:0:ClientId"];
+var clientSecret = config[$"Dataverse:Environments:{env}:Connections:0:ClientSecret"];
 
-if (string.IsNullOrEmpty(connectionString))
+if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
 {
-    Console.WriteLine("No connection configured. Run: dotnet user-secrets set ...");
-    Console.WriteLine("See CLAUDE.md for setup instructions.");
+    Console.WriteLine($"Connection not configured for '{env}' environment.");
+    Console.WriteLine("See docs/guides/LOCAL_DEVELOPMENT_GUIDE.md for setup instructions.");
     return;
 }
+
+var connectionString = $"AuthType=ClientSecret;Url={url};ClientId={clientId};ClientSecret={clientSecret}";
 
 using var client = new ServiceClient(connectionString);
 
