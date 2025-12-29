@@ -61,8 +61,7 @@ All environments live under `Dataverse:Environments:*`. Each environment has its
 | --------------------------------------------------------- | -------------------------------- |
 | `Dataverse:Environments:{env}:Url`                        | Environment URL                  |
 | `Dataverse:Environments:{env}:Connections:N:ClientId`     | Azure AD App Registration ID     |
-| `Dataverse:Environments:{env}:Connections:N:ClientSecret` | Client secret (development)      |
-| `Dataverse:Environments:{env}:Connections:N:ClientSecret` | Env var name (production)        |
+| `Dataverse:Environments:{env}:Connections:N:ClientSecret` | Client secret (dev) or env var name containing secret (prod) |
 | `Dataverse:DefaultEnvironment`                            | Default environment for commands |
 
 ### Single Environment Setup

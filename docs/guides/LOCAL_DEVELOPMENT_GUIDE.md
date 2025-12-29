@@ -85,8 +85,7 @@ All environments are configured under `Dataverse:Environments:*`. Each environme
 | `Dataverse:Environments:{env}:Url`                        | Environment URL                        |
 | `Dataverse:Environments:{env}:Connections:N:Name`         | Connection identifier for logging      |
 | `Dataverse:Environments:{env}:Connections:N:ClientId`     | Azure AD App Registration ID           |
-| `Dataverse:Environments:{env}:Connections:N:ClientSecret` | Client secret (development)            |
-| `Dataverse:Environments:{env}:Connections:N:ClientSecret` | Env var name for secret (production)   |
+| `Dataverse:Environments:{env}:Connections:N:ClientSecret` | Client secret (dev) or env var name containing secret (prod) |
 | `Dataverse:DefaultEnvironment`                            | Default environment when not specified |
 
 ---
