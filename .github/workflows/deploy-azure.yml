@@ -119,12 +119,13 @@ jobs:
           name: functions
           path: ${{ github.workspace }}/publish/functions
 
-      - name: Get App Names from Resource Group
+      - name: Set App Names
         id: get-names
         run: |
-          RG="${{ env.RESOURCE_GROUP }}-${{ inputs.environment }}"
-          WEB_APP=$(az webapp list -g $RG --query "[?contains(name, 'api')].name" -o tsv | head -1)
-          FUNC_APP=$(az functionapp list -g $RG --query "[?contains(name, 'func')].name" -o tsv | head -1)
+          # Use deterministic naming based on CAF convention
+          # No discovery needed - names are predictable from inputs
+          WEB_APP="app-ppds-demo-${{ inputs.environment }}-001"
+          FUNC_APP="func-ppds-demo-${{ inputs.environment }}-001"
           echo "webAppName=$WEB_APP" >> $GITHUB_OUTPUT
           echo "functionAppName=$FUNC_APP" >> $GITHUB_OUTPUT
           echo "Web App: $WEB_APP"
