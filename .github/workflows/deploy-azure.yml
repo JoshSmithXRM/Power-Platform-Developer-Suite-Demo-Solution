@@ -24,7 +24,7 @@ on:
 
 env:
   DOTNET_VERSION: '8.0.x'
-  RESOURCE_GROUP_PREFIX: 'ppds-demo'
+  RESOURCE_GROUP: 'rg-ppdsdemo'
 
 jobs:
   # =============================================================================
@@ -79,7 +79,7 @@ jobs:
     uses: joshsmithxrm/ppds-alm/github/workflows/deploy-azure-integration.yml@main
     with:
       environment: ${{ inputs.environment }}
-      resource-group: ppds-demo-${{ inputs.environment }}
+      resource-group: rg-ppdsdemo-${{ inputs.environment }}
       app-name-prefix: ppds-demo
       service-bus-queues: '[{"name": "account-updates"}]'
     secrets:
@@ -122,7 +122,7 @@ jobs:
       - name: Get App Names from Resource Group
         id: get-names
         run: |
-          RG="${{ env.RESOURCE_GROUP_PREFIX }}-${{ inputs.environment }}"
+          RG="${{ env.RESOURCE_GROUP }}-${{ inputs.environment }}"
           WEB_APP=$(az webapp list -g $RG --query "[?contains(name, 'api')].name" -o tsv | head -1)
           FUNC_APP=$(az functionapp list -g $RG --query "[?contains(name, 'func')].name" -o tsv | head -1)
           echo "webAppName=$WEB_APP" >> $GITHUB_OUTPUT
