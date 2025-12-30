@@ -27,6 +27,9 @@ env:
   RESOURCE_GROUP_PREFIX: 'ppds-demo'
 
 jobs:
+  # =============================================================================
+  # Build Applications
+  # =============================================================================
   build:
     name: Build Applications
     runs-on: ubuntu-latest
@@ -67,33 +70,26 @@ jobs:
           name: functions
           path: ${{ github.workspace }}/publish/functions
 
+  # =============================================================================
+  # Deploy Infrastructure (using ppds-alm reusable workflow)
+  # =============================================================================
   deploy-infrastructure:
     name: Deploy Infrastructure
-    runs-on: ubuntu-latest
     if: ${{ inputs.deploy_infrastructure }}
-    environment: ${{ inputs.environment }}
+    uses: joshsmithxrm/ppds-alm/github/workflows/deploy-azure-integration.yml@main
+    with:
+      environment: ${{ inputs.environment }}
+      resource-group: ppds-demo-${{ inputs.environment }}
+      app-name-prefix: ppds-demo
+      service-bus-queues: '[{"name": "account-updates"}]'
+    secrets:
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-    outputs:
-      webAppName: ${{ steps.deploy.outputs.webAppName }}
-      functionAppName: ${{ steps.deploy.outputs.functionAppName }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Deploy Bicep
-        id: deploy
-        uses: azure/arm-deploy@v2
-        with:
-          resourceGroupName: ${{ env.RESOURCE_GROUP_PREFIX }}-${{ inputs.environment }}
-          template: infra/main.bicep
-          parameters: infra/${{ inputs.environment }}.parameters.json
-          failOnStdErr: false
-
+  # =============================================================================
+  # Deploy Applications
+  # =============================================================================
   deploy-applications:
     name: Deploy Applications
     runs-on: ubuntu-latest
@@ -107,7 +103,9 @@ jobs:
       - name: Azure Login
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Download Web API artifact
         uses: actions/download-artifact@v4
@@ -143,3 +141,12 @@ jobs:
         with:
           app-name: ${{ steps.get-names.outputs.functionAppName }}
           package: ${{ github.workspace }}/publish/functions
+
+      - name: Deployment Summary
+        run: |
+          echo "## Application Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Application | Name |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Web API | \`${{ steps.get-names.outputs.webAppName }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Functions | \`${{ steps.get-names.outputs.functionAppName }}\` |" >> $GITHUB_STEP_SUMMARY

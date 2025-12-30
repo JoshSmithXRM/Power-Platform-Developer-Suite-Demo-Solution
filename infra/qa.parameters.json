@@ -8,8 +8,10 @@
     "appNamePrefix": {
       "value": "ppds-demo"
     },
-    "serviceBusQueueName": {
-      "value": "account-updates"
+    "serviceBusQueues": {
+      "value": [
+        { "name": "account-updates" }
+      ]
     }
   }
 }
