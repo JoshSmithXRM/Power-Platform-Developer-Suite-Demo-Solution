@@ -8,6 +8,7 @@ builder.Services.AddDataverseConnectionPool(builder.Configuration);
 
 // Add services
 builder.Services.AddSingleton<IProductService, ProductService>();
+builder.Services.AddScoped<IAccountService, AccountService>();
 
 // Add controllers
 builder.Services.AddControllers();
