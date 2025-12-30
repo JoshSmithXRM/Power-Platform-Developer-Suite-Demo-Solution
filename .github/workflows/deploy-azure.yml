@@ -1,0 +1,145 @@
+name: Deploy Azure Resources
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - qa
+          - prod
+      deploy_infrastructure:
+        description: 'Deploy infrastructure (Bicep)'
+        required: false
+        type: boolean
+        default: false
+      deploy_applications:
+        description: 'Deploy applications'
+        required: false
+        type: boolean
+        default: true
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  RESOURCE_GROUP_PREFIX: 'ppds-demo'
+
+jobs:
+  build:
+    name: Build Applications
+    runs-on: ubuntu-latest
+    if: ${{ inputs.deploy_applications }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build Web API
+        run: dotnet build src/Api/PPDSDemo.Api/PPDSDemo.Api.csproj -c Release --no-restore
+
+      - name: Publish Web API
+        run: dotnet publish src/Api/PPDSDemo.Api/PPDSDemo.Api.csproj -c Release -o ${{ github.workspace }}/publish/api --no-build
+
+      - name: Build Functions
+        run: dotnet build src/Functions/PPDSDemo.Functions/PPDSDemo.Functions.csproj -c Release --no-restore
+
+      - name: Publish Functions
+        run: dotnet publish src/Functions/PPDSDemo.Functions/PPDSDemo.Functions.csproj -c Release -o ${{ github.workspace }}/publish/functions --no-build
+
+      - name: Upload Web API artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api
+          path: ${{ github.workspace }}/publish/api
+
+      - name: Upload Functions artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: functions
+          path: ${{ github.workspace }}/publish/functions
+
+  deploy-infrastructure:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    if: ${{ inputs.deploy_infrastructure }}
+    environment: ${{ inputs.environment }}
+
+    outputs:
+      webAppName: ${{ steps.deploy.outputs.webAppName }}
+      functionAppName: ${{ steps.deploy.outputs.functionAppName }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy Bicep
+        id: deploy
+        uses: azure/arm-deploy@v2
+        with:
+          resourceGroupName: ${{ env.RESOURCE_GROUP_PREFIX }}-${{ inputs.environment }}
+          template: infra/main.bicep
+          parameters: infra/${{ inputs.environment }}.parameters.json
+          failOnStdErr: false
+
+  deploy-applications:
+    name: Deploy Applications
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: ${{ always() && inputs.deploy_applications && needs.build.result == 'success' }}
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Download Web API artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: api
+          path: ${{ github.workspace }}/publish/api
+
+      - name: Download Functions artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: functions
+          path: ${{ github.workspace }}/publish/functions
+
+      - name: Get App Names from Resource Group
+        id: get-names
+        run: |
+          RG="${{ env.RESOURCE_GROUP_PREFIX }}-${{ inputs.environment }}"
+          WEB_APP=$(az webapp list -g $RG --query "[?contains(name, 'api')].name" -o tsv | head -1)
+          FUNC_APP=$(az functionapp list -g $RG --query "[?contains(name, 'func')].name" -o tsv | head -1)
+          echo "webAppName=$WEB_APP" >> $GITHUB_OUTPUT
+          echo "functionAppName=$FUNC_APP" >> $GITHUB_OUTPUT
+          echo "Web App: $WEB_APP"
+          echo "Function App: $FUNC_APP"
+
+      - name: Deploy Web API
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ steps.get-names.outputs.webAppName }}
+          package: ${{ github.workspace }}/publish/api
+
+      - name: Deploy Functions
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ steps.get-names.outputs.functionAppName }}
+          package: ${{ github.workspace }}/publish/functions
