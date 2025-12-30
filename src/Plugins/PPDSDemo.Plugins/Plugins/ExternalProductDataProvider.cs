@@ -113,6 +113,12 @@ namespace PPDSDemo.Plugins.Plugins
                 var product = JsonSerializer.Deserialize<ProductDto>(body,
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
+                if (product == null)
+                {
+                    throw new InvalidPluginExecutionException(
+                        "Failed to deserialize product from API response.");
+                }
+
                 var entity = MapToEntity(product);
                 context.PluginExecutionContext.OutputParameters["BusinessEntity"] = entity;
 
@@ -184,6 +190,12 @@ namespace PPDSDemo.Plugins.Plugins
                 var body = response.Content.ReadAsStringAsync().Result;
                 var created = JsonSerializer.Deserialize<ProductDto>(body,
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                if (created == null)
+                {
+                    throw new InvalidPluginExecutionException(
+                        "Failed to deserialize created product from API response.");
+                }
 
                 context.PluginExecutionContext.OutputParameters["id"] = created.Id;
 
