@@ -8,7 +8,7 @@
     <Descriptions>
       <Description description="Demo solution showcasing the Power Platform Developer Suite VS Code extension" languagecode="1033" />
     </Descriptions>
-    <Version>1.0.20251227.34</Version>
+    <Version>1.0.20251231.40</Version>
     <Managed>2</Managed>
     <Publisher>
       <UniqueName>PPDSDemoPublisher</UniqueName>
@@ -90,43 +90,9 @@
       <RootComponent type="9" schemaName="ppds_status" behavior="0" />
       <RootComponent type="91" id="{50da79c7-46da-f011-8543-000d3a3b9cba}" schemaName="PPDSDemo.PluginPackage, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null" behavior="0" />
       <RootComponent type="91" id="{24a62556-43da-f011-8543-000d3a3b9cba}" schemaName="PPDSDemo.Plugins, Version=1.0.0.0, Culture=neutral, PublicKeyToken=87a4b0dac59374c6" behavior="0" />
-      <RootComponent type="92" id="{9ff3e18f-43da-f011-8543-000d3a3b9cba}" behavior="0" />
-      <RootComponent type="92" id="{a939bd88-43da-f011-8543-000d3a3b9cba}" behavior="0" />
-      <RootComponent type="92" id="{dc9dfbce-46da-f011-8543-000d3a3b9cba}" behavior="0" />
       <RootComponent type="95" id="{6d37edfa-79dc-f011-8543-000d3a3b9cba}" behavior="0" />
       <RootComponent type="95" id="{b5dac77c-79dc-f011-8543-000d3a3b9cba}" behavior="0" />
     </RootComponents>
-    <MissingDependencies>
-      <MissingDependency>
-        <Required type="2" schemaName="adx_createdbyipaddress" displayName="Created By (IP Address)" parentSchemaName="account" parentDisplayName="Account" solution="PowerPages_RuntimeCoreDependencies (1.0.2305.1)">
-          <package appName="Power Pages Core Package" version="1.1.2510.204">PowerPages_Core (1.1.2510.204)</package>
-        </Required>
-        <Dependent type="93" id="{2db80dbd-cbdb-f011-8543-000d3a3b9cba}" />
-      </MissingDependency>
-      <MissingDependency>
-        <Required type="2" schemaName="adx_createdbyusername" displayName="Created By (User Name)" parentSchemaName="account" parentDisplayName="Account" solution="PowerPages_RuntimeCoreDependencies (1.0.2305.1)">
-          <package appName="Power Pages Core Package" version="1.1.2510.204">PowerPages_Core (1.1.2510.204)</package>
-        </Required>
-        <Dependent type="93" id="{2db80dbd-cbdb-f011-8543-000d3a3b9cba}" />
-      </MissingDependency>
-      <MissingDependency>
-        <Required type="2" schemaName="adx_modifiedbyipaddress" displayName="Modified By (IP Address)" parentSchemaName="account" parentDisplayName="Account" solution="PowerPages_RuntimeCoreDependencies (1.0.2305.1)">
-          <package appName="Power Pages Core Package" version="1.1.2510.204">PowerPages_Core (1.1.2510.204)</package>
-        </Required>
-        <Dependent type="93" id="{2db80dbd-cbdb-f011-8543-000d3a3b9cba}" />
-      </MissingDependency>
-      <MissingDependency>
-        <Required type="2" schemaName="adx_modifiedbyusername" displayName="Modified By (User Name)" parentSchemaName="account" parentDisplayName="Account" solution="PowerPages_RuntimeCoreDependencies (1.0.2305.1)">
-          <package appName="Power Pages Core Package" version="1.1.2510.204">PowerPages_Core (1.1.2510.204)</package>
-        </Required>
-        <Dependent type="93" id="{2db80dbd-cbdb-f011-8543-000d3a3b9cba}" />
-      </MissingDependency>
-      <MissingDependency>
-        <Required type="2" schemaName="msa_managingpartnerid" displayName="Managing Partner" parentSchemaName="account" parentDisplayName="Account" solution="PowerPages_RuntimeCoreDependencies (1.0.2305.1)">
-          <package appName="Power Pages Core Package" version="1.1.2510.204">PowerPages_Core (1.1.2510.204)</package>
-        </Required>
-        <Dependent type="93" id="{2db80dbd-cbdb-f011-8543-000d3a3b9cba}" />
-      </MissingDependency>
-    </MissingDependencies>
+    <MissingDependencies />
   </SolutionManifest>
 </ImportExportXml>
