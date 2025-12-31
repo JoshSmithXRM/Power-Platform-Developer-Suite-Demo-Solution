@@ -62,7 +62,7 @@ public class WebhookTrigger
                 return badRequest;
             }
 
-            _logger.LogDebug("Webhook body: {Body}", body);
+            _logger.LogDebug("Webhook body received: {BodyLength} chars", body.Length);
 
             // Forward to Web API
             using var content = new StringContent(body, Encoding.UTF8, "application/json");

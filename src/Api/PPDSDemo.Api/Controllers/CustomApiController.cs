@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PPDSDemo.Api.Infrastructure;
 using PPDSDemo.Api.Models;
 using PPDSDemo.Api.Services;
 
@@ -33,7 +34,7 @@ public class CustomApiController : ControllerBase
         [FromBody] ProcessAccountRequest request)
     {
         _logger.LogInformation("Processing account {AccountId} with action {Action}",
-            request.AccountId, request.Action);
+            request.AccountId, LogSanitizer.SanitizeShort(request.Action));
 
         if (request.AccountId == Guid.Empty)
         {
@@ -56,7 +57,7 @@ public class CustomApiController : ControllerBase
         var response = await _accountService.ProcessAccountAsync(request);
 
         _logger.LogInformation("Process account result: Success={Success}, Message={Message}",
-            response.Success, response.Message);
+            response.Success, LogSanitizer.Sanitize(response.Message));
 
         return Ok(response);
     }

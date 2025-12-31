@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PPDSDemo.Api.Infrastructure;
 using PPDSDemo.Api.Models;
 using PPDSDemo.Api.Services;
 
@@ -30,7 +31,7 @@ public class ProductsController : ControllerBase
     [HttpGet]
     public ActionResult<IEnumerable<Product>> GetAll([FromQuery] string? filter)
     {
-        _logger.LogDebug("Getting all products with filter: {Filter}", filter);
+        _logger.LogDebug("Getting all products with filter: {Filter}", LogSanitizer.SanitizeShort(filter));
         var products = _productService.GetAll(filter);
         return Ok(products);
     }
@@ -60,7 +61,7 @@ public class ProductsController : ControllerBase
     [HttpPost]
     public ActionResult<Product> Create([FromBody] Product product)
     {
-        _logger.LogInformation("Creating product: {ProductName}", product.Name);
+        _logger.LogInformation("Creating product: {ProductName}", LogSanitizer.SanitizeShort(product.Name));
         var created = _productService.Create(product);
         return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
     }

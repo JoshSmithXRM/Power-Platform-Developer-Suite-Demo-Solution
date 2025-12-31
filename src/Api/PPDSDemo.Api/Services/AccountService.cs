@@ -1,5 +1,6 @@
 using Microsoft.Xrm.Sdk;
 using PPDS.Dataverse.Pooling;
+using PPDSDemo.Api.Infrastructure;
 using PPDSDemo.Api.Models;
 
 namespace PPDSDemo.Api.Services;
@@ -54,7 +55,7 @@ public class AccountService : IAccountService
     public async Task<ProcessAccountResponse> ProcessAccountAsync(ProcessAccountRequest request)
     {
         _logger.LogInformation("Processing account {AccountId} with action {Action}",
-            request.AccountId, request.Action);
+            request.AccountId, LogSanitizer.SanitizeShort(request.Action));
 
         try
         {
@@ -92,7 +93,7 @@ public class AccountService : IAccountService
             return new ProcessAccountResponse
             {
                 Success = false,
-                Message = $"Error processing account: {ex.Message}"
+                Message = "An error occurred while processing the account. Please try again or contact support."
             };
         }
     }
