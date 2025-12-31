@@ -12,7 +12,6 @@
   <WebResources />
   <CustomControls />
   <SolutionPluginAssemblies />
-  <SdkMessageProcessingSteps />
   <ServiceEndpoints />
   <EntityDataProviders />
   <Languages>
