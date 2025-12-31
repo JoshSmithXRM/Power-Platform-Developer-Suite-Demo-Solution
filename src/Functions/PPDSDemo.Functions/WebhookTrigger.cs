@@ -66,7 +66,7 @@ public class WebhookTrigger
 
             // Forward to Web API
             using var content = new StringContent(body, Encoding.UTF8, "application/json");
-            var apiResponse = await _httpClient.PostAsync(apiEndpoint, content);
+            using var apiResponse = await _httpClient.PostAsync(apiEndpoint, content);
             var responseBody = await apiResponse.Content.ReadAsStringAsync();
 
             _logger.LogInformation("Web API response for {WebhookType}: {StatusCode}",

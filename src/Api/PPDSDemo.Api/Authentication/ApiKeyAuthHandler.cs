@@ -33,14 +33,11 @@ public class ApiKeyAuthHandler : AuthenticationHandler<AuthenticationSchemeOptio
             .GetRequiredService<IConfiguration>()
             .GetValue<string>("ApiKey");
 
-        // If no API key configured, allow all requests (development mode)
+        // Require API key to be configured - fail closed for security
         if (string.IsNullOrEmpty(configuredApiKey))
         {
-            Logger.LogWarning("No API key configured - authentication bypassed. Set 'ApiKey' in configuration for production.");
-            var bypassClaims = new[] { new Claim(ClaimTypes.Name, "anonymous") };
-            var bypassIdentity = new ClaimsIdentity(bypassClaims, Scheme.Name);
-            var bypassPrincipal = new ClaimsPrincipal(bypassIdentity);
-            return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(bypassPrincipal, Scheme.Name)));
+            Logger.LogError("API key authentication failed: No API key configured. Set 'ApiKey' in configuration.");
+            return Task.FromResult(AuthenticateResult.Fail("API Key not configured on server"));
         }
 
         if (!string.Equals(providedApiKey, configuredApiKey, StringComparison.Ordinal))

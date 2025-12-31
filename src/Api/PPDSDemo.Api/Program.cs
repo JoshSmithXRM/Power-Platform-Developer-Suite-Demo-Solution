@@ -14,42 +14,42 @@ builder.Services.AddDataverseConnectionPool(builder.Configuration);
 builder.Services.AddSingleton<IProductService, ProductService>();
 builder.Services.AddScoped<IAccountService, AccountService>();
 
-// Configure dual authentication: API Key (plugins) + JWT Bearer (Azure Functions with Managed Identity)
-// The default policy accepts either scheme.
+// Configure authentication: API Key (always) + JWT Bearer (only when Azure AD configured)
 var azureAdSection = builder.Configuration.GetSection("AzureAd");
-var isAzureAdConfigured = !string.IsNullOrEmpty(azureAdSection["ClientId"]);
+var isAzureAdConfigured = !string.IsNullOrEmpty(azureAdSection["ClientId"])
+    && !string.IsNullOrEmpty(azureAdSection["TenantId"]);
 
-builder.Services.AddAuthentication(options =>
+var authBuilder = builder.Services.AddAuthentication(options =>
 {
-    // Default to API Key for backwards compatibility
     options.DefaultScheme = "ApiKey";
     options.DefaultChallengeScheme = "ApiKey";
 })
-.AddScheme<AuthenticationSchemeOptions, ApiKeyAuthHandler>("ApiKey", null)
-.AddJwtBearer("Bearer", options =>
+.AddScheme<AuthenticationSchemeOptions, ApiKeyAuthHandler>("ApiKey", null);
+
+// Only register JWT Bearer scheme when Azure AD is properly configured
+if (isAzureAdConfigured)
 {
-    if (isAzureAdConfigured)
+    authBuilder.AddJwtBearer("Bearer", options =>
     {
-        // Configure JWT Bearer using Azure AD settings
         options.Authority = $"https://login.microsoftonline.com/{azureAdSection["TenantId"]}/v2.0";
         options.Audience = azureAdSection["ClientId"];
         options.TokenValidationParameters.ValidateIssuer = true;
         options.TokenValidationParameters.ValidIssuer = $"https://login.microsoftonline.com/{azureAdSection["TenantId"]}/v2.0";
-    }
-    else
-    {
-        // Azure AD not configured - Bearer scheme will fail gracefully
-        // API Key scheme will be used instead
-        options.TokenValidationParameters.ValidateIssuer = false;
-        options.TokenValidationParameters.ValidateAudience = false;
-    }
-});
+    });
+}
 
-// Configure authorization policy that accepts either authentication scheme
+// Configure authorization policy - include Bearer only if Azure AD is configured
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("ApiAccess", policy =>
     {
-        policy.AddAuthenticationSchemes("ApiKey", "Bearer");
+        if (isAzureAdConfigured)
+        {
+            policy.AddAuthenticationSchemes("ApiKey", "Bearer");
+        }
+        else
+        {
+            policy.AddAuthenticationSchemes("ApiKey");
+        }
         policy.RequireAuthenticatedUser();
     });
 

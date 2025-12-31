@@ -32,6 +32,12 @@ namespace PPDSDemo.Plugins.Plugins
         private static readonly ConcurrentDictionary<string, HttpClient> _httpClients =
             new ConcurrentDictionary<string, HttpClient>();
 
+        // Cached JsonSerializerOptions - creating new instances per call is expensive
+        private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        };
+
         private readonly string _apiKey;
         private readonly string _apiBaseUrl;
 
@@ -110,8 +116,7 @@ namespace PPDSDemo.Plugins.Plugins
                 }
 
                 var body = response.Content.ReadAsStringAsync().Result;
-                var product = JsonSerializer.Deserialize<ProductDto>(body,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var product = JsonSerializer.Deserialize<ProductDto>(body, _jsonOptions);
 
                 if (product == null)
                 {
@@ -145,8 +150,7 @@ namespace PPDSDemo.Plugins.Plugins
                 }
 
                 var body = response.Content.ReadAsStringAsync().Result;
-                var products = JsonSerializer.Deserialize<List<ProductDto>>(body,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var products = JsonSerializer.Deserialize<List<ProductDto>>(body, _jsonOptions);
 
                 var collection = new EntityCollection { EntityName = EntityLogicalName };
                 foreach (var product in products ?? new List<ProductDto>())
@@ -193,8 +197,7 @@ namespace PPDSDemo.Plugins.Plugins
                 }
 
                 var body = response.Content.ReadAsStringAsync().Result;
-                var created = JsonSerializer.Deserialize<ProductDto>(body,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var created = JsonSerializer.Deserialize<ProductDto>(body, _jsonOptions);
 
                 if (created == null)
                 {

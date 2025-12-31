@@ -51,11 +51,22 @@ public class ServiceBusProcessor
             }
             else
             {
+                var statusCode = (int)response.StatusCode;
                 _logger.LogWarning("Web API returned {StatusCode}: {Body}",
                     response.StatusCode, responseBody);
 
-                // Throw to trigger retry/dead-letter based on Service Bus config
-                throw new InvalidOperationException($"Web API returned {response.StatusCode}: {responseBody}");
+                // Only retry transient errors (5xx). Client errors (4xx) are permanent failures
+                // that won't succeed on retry - complete the message to avoid infinite retry loops.
+                if (statusCode >= 500)
+                {
+                    throw new InvalidOperationException($"Web API returned {response.StatusCode}: {responseBody}");
+                }
+                else
+                {
+                    // 4xx errors: Log as error (not warning) since data is being lost, but don't retry
+                    _logger.LogError("Permanent failure processing message - Web API returned {StatusCode}. Message will not be retried. Body: {Body}",
+                        response.StatusCode, responseBody);
+                }
             }
         }
         catch (Exception ex)

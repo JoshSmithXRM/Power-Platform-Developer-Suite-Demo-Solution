@@ -10,6 +10,25 @@ namespace PPDSDemo.Api.Controllers;
 /// <summary>
 /// Diagnostic endpoints for health checks and pool testing.
 /// </summary>
+/// <remarks>
+/// <para><strong>Health Checks:</strong></para>
+/// <para>
+/// This controller does NOT provide an anonymous health endpoint. For Azure App Service,
+/// configure health checks in Azure Portal (Monitoring → Health check) which probes
+/// your app internally. The platform handles health monitoring - application code
+/// should not expose unauthenticated endpoints.
+/// </para>
+/// <para>
+/// If you need authenticated health verification, use the /api/diagnostics/health endpoint
+/// which requires API key authentication.
+/// </para>
+/// <para><strong>Pool Testing:</strong></para>
+/// <para>
+/// The pool-test endpoint is only available in Development environment. Production
+/// performance testing should use Azure Load Testing or similar tools against
+/// non-production environments. Production monitoring should use Application Insights.
+/// </para>
+/// </remarks>
 [ApiController]
 [Authorize(Policy = "ApiAccess")]
 [Route("api/diagnostics")]
@@ -17,17 +36,25 @@ public class DiagnosticsController : ControllerBase
 {
     private readonly IDataverseConnectionPool _pool;
     private readonly ILogger<DiagnosticsController> _logger;
+    private readonly IHostEnvironment _environment;
 
-    public DiagnosticsController(IDataverseConnectionPool pool, ILogger<DiagnosticsController> logger)
+    public DiagnosticsController(
+        IDataverseConnectionPool pool,
+        ILogger<DiagnosticsController> logger,
+        IHostEnvironment environment)
     {
         _pool = pool;
         _logger = logger;
+        _environment = environment;
     }
 
     /// <summary>
-    /// Health check endpoint.
+    /// Authenticated health check endpoint.
     /// </summary>
-    [AllowAnonymous]
+    /// <remarks>
+    /// Requires API key authentication. For unauthenticated health probes, configure
+    /// Azure App Service's built-in health check feature in the Azure Portal.
+    /// </remarks>
     [HttpGet("health")]
     public IActionResult Health()
     {
@@ -37,13 +64,23 @@ public class DiagnosticsController : ControllerBase
     /// <summary>
     /// Tests connection pool performance by running WhoAmI calls.
     /// </summary>
+    /// <remarks>
+    /// Only available in Development environment. Returns 404 in Production.
+    /// Use Azure Load Testing for production performance validation.
+    /// </remarks>
     [HttpGet("pool-test")]
     public async Task<ActionResult<PoolTestResult>> PoolTest(
         [FromQuery] int operations = 100,
         [FromQuery] bool parallel = true)
     {
-        // Cap operations to prevent DoS abuse
-        const int maxOperations = 1000;
+        // This endpoint is only available in Development
+        if (!_environment.IsDevelopment())
+        {
+            return NotFound();
+        }
+
+        // Cap operations for development testing
+        const int maxOperations = 100;
         if (operations < 1 || operations > maxOperations)
         {
             return BadRequest(new { error = $"Operations must be between 1 and {maxOperations}" });

@@ -77,6 +77,12 @@ namespace PPDSDemo.Plugins.Plugins
         private static readonly ConcurrentDictionary<string, HttpClient> _httpClients =
             new ConcurrentDictionary<string, HttpClient>();
 
+        // Cached JsonSerializerOptions - creating new instances per call is expensive
+        private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        };
+
         private readonly string _apiKey;
         private readonly string _apiBaseUrl;
 
@@ -195,8 +201,7 @@ namespace PPDSDemo.Plugins.Plugins
                         $"API returned {response.StatusCode}: {responseBody}");
                 }
 
-                var result = JsonSerializer.Deserialize<ProcessAccountResponse>(responseBody,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var result = JsonSerializer.Deserialize<ProcessAccountResponse>(responseBody, _jsonOptions);
 
                 return result ?? new ProcessAccountResponse { Success = false, Message = "Empty response" };
             }

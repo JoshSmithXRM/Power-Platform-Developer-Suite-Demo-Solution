@@ -24,7 +24,6 @@ on:
 
 env:
   DOTNET_VERSION: '8.0.x'
-  RESOURCE_GROUP: 'rg-ppds-demo'
 
 jobs:
   # =============================================================================
@@ -93,8 +92,8 @@ jobs:
   deploy-applications:
     name: Deploy Applications
     runs-on: ubuntu-latest
-    needs: [build]
-    if: ${{ always() && inputs.deploy_applications && needs.build.result == 'success' }}
+    needs: [build, deploy-infrastructure]
+    if: ${{ always() && inputs.deploy_applications && needs.build.result == 'success' && (needs.deploy-infrastructure.result == 'success' || needs.deploy-infrastructure.result == 'skipped') }}
     environment: ${{ inputs.environment }}
 
     steps:
