@@ -50,6 +50,11 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repoRoot
 
+# Verify ppds CLI is available
+if (-not (Get-Command -Name 'ppds' -CommandType Application -ErrorAction SilentlyContinue)) {
+    throw "The PPDS CLI tool 'ppds' was not found in PATH. Install with: dotnet tool install -g PPDS.Cli"
+}
+
 try {
     # Define plugin projects
     $plugins = @(
@@ -100,7 +105,7 @@ try {
         if ($LASTEXITCODE -eq 0) {
             Write-Host "  Completed successfully" -ForegroundColor Green
         } else {
-            Write-Error "  Deployment failed"
+            throw "Deployment failed for '$($plugin.Name)'. ppds exited with code $LASTEXITCODE."
         }
     }
 

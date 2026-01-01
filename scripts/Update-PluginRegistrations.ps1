@@ -42,6 +42,11 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repoRoot
 
+# Verify ppds CLI is available
+if (-not (Get-Command -Name 'ppds' -CommandType Application -ErrorAction SilentlyContinue)) {
+    throw "The PPDS CLI tool 'ppds' was not found in PATH. Install with: dotnet tool install -g PPDS.Cli"
+}
+
 try {
     # Define plugin projects
     $plugins = @(
@@ -91,7 +96,7 @@ try {
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "  Extracted to $($plugin.Output)" -ForegroundColor Green
             } else {
-                Write-Error "  Failed to extract registrations"
+                throw "Failed to extract registrations for '$($plugin.Name)'. ppds exited with code $LASTEXITCODE."
             }
         }
     }
@@ -114,7 +119,7 @@ try {
             & ppds @diffArgs
 
             if ($LASTEXITCODE -ne 0) {
-                Write-Error "  Diff failed for $($plugin.Name)"
+                throw "Diff failed for '$($plugin.Name)'. ppds exited with code $LASTEXITCODE."
             }
         }
     }
