@@ -1,5 +1,5 @@
-# Test-PpdsDataMigration.ps1
-# Tests PPDS CLI data migration commands after SDK refactor
+# Test-PpdsDataMigration-Interactive.ps1
+# Tests PPDS CLI data migration commands using interactive (default) auth
 # Executes in tmp/ folder for isolated testing
 
 $ErrorActionPreference = "Stop"
@@ -13,12 +13,12 @@ if (-not (Test-Path $tmpDir)) {
 }
 
 # Start logging
-$logFile = Join-Path $tmpDir "ppds-test-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
+$logFile = Join-Path $tmpDir "ppds-test-interactive-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
 Start-Transcript -Path $logFile
 
 Push-Location $tmpDir
 try {
-    Write-Host "=== PPDS CLI Data Migration Test ===" -ForegroundColor Cyan
+    Write-Host "=== PPDS CLI Data Migration Test (Interactive) ===" -ForegroundColor Cyan
     Write-Host "Log file: $logFile" -ForegroundColor DarkGray
     Write-Host "Working directory: $tmpDir" -ForegroundColor DarkGray
     Write-Host ""
@@ -41,9 +41,9 @@ try {
     Write-Host "      Output: data.zip" -ForegroundColor Green
     Write-Host ""
 
-    # 4. Import data to target environment with user mapping
+    # 4. Import data to target environment with user mapping (interactive auth)
     Write-Host "[4/4] Importing data to QA environment..." -ForegroundColor Yellow
-    ppds data import -d data.zip -u users.xml -env "https://orge821e2a2.crm.dynamics.com/" -p sp1,sp2 --debug
+    ppds data import -d data.zip -u users.xml -env "https://orge821e2a2.crm.dynamics.com/" --debug
     Write-Host "      Import complete" -ForegroundColor Green
     Write-Host ""
 
