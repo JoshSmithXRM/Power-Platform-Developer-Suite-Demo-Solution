@@ -103,10 +103,10 @@ This demo solution is part of the Power Platform Developer Suite ecosystem:
 
 | Repository | Purpose | Usage in this Demo |
 |------------|---------|-------------------|
-| [ppds-sdk](https://github.com/joshsmithxrm/ppds-sdk) | NuGet packages for plugin development | `PPDS.Plugins` package for step registration attributes |
+| [power-platform-developer-suite](https://github.com/joshsmithxrm/power-platform-developer-suite) | SDK + CLI + TUI + Extension + MCP | `PPDS.Plugins` package, development experience |
 | [ppds-tools](https://github.com/joshsmithxrm/ppds-tools) | PowerShell module for Dataverse operations | Deployment scripts in `tools/` |
 | [ppds-alm](https://github.com/joshsmithxrm/ppds-alm) | CI/CD templates for GitHub Actions | Workflow examples in `.github/workflows/` |
-| [power-platform-developer-suite](https://github.com/joshsmithxrm/power-platform-developer-suite) | VS Code extension | Development experience |
+| [ppds-orchestration](https://github.com/joshsmithxrm/ppds-orchestration) | Parallel Claude Code sessions | AI-assisted development |
 
 ## Plugin Development
 
