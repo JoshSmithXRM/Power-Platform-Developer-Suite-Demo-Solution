@@ -43,34 +43,40 @@ public static class CrossEnvMigrationCommand
 
     public static Command Create()
     {
-        var command = new Command("migrate-to-qa", "Export from Dev and import to QA environment");
+        var skipSeedOption = new Option<bool>("--skip-seed")
+        {
+            Description = "Skip seeding data in Dev (use existing data)"
+        };
 
-        var skipSeedOption = new Option<bool>(
-            "--skip-seed",
-            "Skip seeding data in Dev (use existing data)");
-
-        var dryRunOption = new Option<bool>(
-            "--dry-run",
-            "Export only, don't import to QA");
+        var dryRunOption = new Option<bool>("--dry-run")
+        {
+            Description = "Export only, don't import to QA"
+        };
 
         // Use standardized options from GlobalOptionsExtensions
         var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
         var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
-        command.AddOption(skipSeedOption);
-        command.AddOption(dryRunOption);
-        command.AddOption(verboseOption);
-        command.AddOption(debugOption);
+        var command = new Command("migrate-to-qa", "Export from Dev and import to QA environment")
+        {
+            skipSeedOption,
+            dryRunOption,
+            verboseOption,
+            debugOption
+        };
 
-        command.SetHandler(async (bool skipSeed, bool dryRun, bool verbose, bool debug) =>
+        command.SetAction(async (parseResult, cancellationToken) =>
         {
             var options = new GlobalOptions
             {
-                Verbose = verbose,
-                Debug = debug
+                Verbose = parseResult.GetValue(verboseOption),
+                Debug = parseResult.GetValue(debugOption)
             };
-            Environment.ExitCode = await ExecuteAsync(skipSeed, dryRun, options);
-        }, skipSeedOption, dryRunOption, verboseOption, debugOption);
+            return await ExecuteAsync(
+                parseResult.GetValue(skipSeedOption),
+                parseResult.GetValue(dryRunOption),
+                options);
+        });
 
         return command;
     }

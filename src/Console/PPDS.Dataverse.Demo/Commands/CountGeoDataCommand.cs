@@ -12,27 +12,28 @@ public static class CountGeoDataCommand
 {
     public static Command Create()
     {
-        var command = new Command("count-geo-data", "Display record counts for geographic reference data");
-
         // Use standardized options from GlobalOptionsExtensions
         var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
         var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
         var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
-        command.AddOption(envOption);
-        command.AddOption(verboseOption);
-        command.AddOption(debugOption);
+        var command = new Command("count-geo-data", "Display record counts for geographic reference data")
+        {
+            envOption,
+            verboseOption,
+            debugOption
+        };
 
-        command.SetHandler(async (string? environment, bool verbose, bool debug) =>
+        command.SetAction(async (parseResult, cancellationToken) =>
         {
             var options = new GlobalOptions
             {
-                Environment = environment,
-                Verbose = verbose,
-                Debug = debug
+                Environment = parseResult.GetValue(envOption),
+                Verbose = parseResult.GetValue(verboseOption),
+                Debug = parseResult.GetValue(debugOption)
             };
-            Environment.ExitCode = await ExecuteAsync(options);
-        }, envOption, verboseOption, debugOption);
+            return await ExecuteAsync(options);
+        });
 
         return command;
     }

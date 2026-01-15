@@ -36,47 +36,61 @@ public static class MigrateGeoDataCommand
 
     public static Command Create()
     {
-        var command = new Command("migrate-geo-data", "Migrate geographic data between environments");
+        var sourceOption = new Option<string>("--source", "-s")
+        {
+            Description = "Source environment name",
+            DefaultValueFactory = _ => "Dev"
+        };
 
-        var sourceOption = new Option<string>(
-            aliases: ["--source", "-s"],
-            getDefaultValue: () => "Dev",
-            description: "Source environment name");
+        var targetOption = new Option<string?>("--target", "-t")
+        {
+            Description = "Target environment name (required for CLI mode)"
+        };
 
-        var targetOption = new Option<string?>(
-            aliases: ["--target", "-t"],
-            description: "Target environment name (required for CLI mode)");
+        var dryRunOption = new Option<bool>("--dry-run")
+        {
+            Description = "Export only, don't import to target"
+        };
 
-        var dryRunOption = new Option<bool>(
-            "--dry-run",
-            "Export only, don't import to target");
+        var cleanTargetOption = new Option<bool>("--clean-target")
+        {
+            Description = "Clean target environment before import"
+        };
 
-        var cleanTargetOption = new Option<bool>(
-            "--clean-target",
-            "Clean target environment before import");
-
-        var useSdkOption = new Option<bool>(
-            "--use-sdk",
-            "Use direct SDK instead of CLI (for SDK developers)");
+        var useSdkOption = new Option<bool>("--use-sdk")
+        {
+            Description = "Use direct SDK instead of CLI (for SDK developers)"
+        };
 
         // Use standardized options from GlobalOptionsExtensions
         var parallelismOption = GlobalOptionsExtensions.CreateParallelismOption();
         var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
         var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
-        command.AddOption(sourceOption);
-        command.AddOption(targetOption);
-        command.AddOption(dryRunOption);
-        command.AddOption(cleanTargetOption);
-        command.AddOption(useSdkOption);
-        command.AddOption(parallelismOption);
-        command.AddOption(verboseOption);
-        command.AddOption(debugOption);
-
-        command.SetHandler(async (string source, string? target, bool dryRun, bool cleanTarget, bool useSdk, int? parallelism, bool verbose, bool debug) =>
+        var command = new Command("migrate-geo-data", "Migrate geographic data between environments")
         {
-            Environment.ExitCode = await ExecuteAsync(source, target, dryRun, cleanTarget, useSdk, parallelism, verbose, debug);
-        }, sourceOption, targetOption, dryRunOption, cleanTargetOption, useSdkOption, parallelismOption, verboseOption, debugOption);
+            sourceOption,
+            targetOption,
+            dryRunOption,
+            cleanTargetOption,
+            useSdkOption,
+            parallelismOption,
+            verboseOption,
+            debugOption
+        };
+
+        command.SetAction(async (parseResult, cancellationToken) =>
+        {
+            return await ExecuteAsync(
+                parseResult.GetValue(sourceOption)!,
+                parseResult.GetValue(targetOption),
+                parseResult.GetValue(dryRunOption),
+                parseResult.GetValue(cleanTargetOption),
+                parseResult.GetValue(useSdkOption),
+                parseResult.GetValue(parallelismOption),
+                parseResult.GetValue(verboseOption),
+                parseResult.GetValue(debugOption));
+        });
 
         return command;
     }

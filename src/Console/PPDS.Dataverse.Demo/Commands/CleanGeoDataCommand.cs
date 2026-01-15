@@ -19,15 +19,15 @@ public static class CleanGeoDataCommand
 {
     public static Command Create()
     {
-        var command = new Command("clean-geo-data", "Bulk delete geographic reference data");
+        var zipOnlyOption = new Option<bool>("--zip-only")
+        {
+            Description = "Only delete ZIP codes (preserve states)"
+        };
 
-        var zipOnlyOption = new Option<bool>(
-            "--zip-only",
-            "Only delete ZIP codes (preserve states)");
-
-        var confirmOption = new Option<bool>(
-            "--confirm",
-            "Skip confirmation prompt");
+        var confirmOption = new Option<bool>("--confirm")
+        {
+            Description = "Skip confirmation prompt"
+        };
 
         // Use standardized options from GlobalOptionsExtensions
         var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
@@ -35,24 +35,30 @@ public static class CleanGeoDataCommand
         var debugOption = GlobalOptionsExtensions.CreateDebugOption();
         var parallelismOption = GlobalOptionsExtensions.CreateParallelismOption();
 
-        command.AddOption(zipOnlyOption);
-        command.AddOption(confirmOption);
-        command.AddOption(envOption);
-        command.AddOption(verboseOption);
-        command.AddOption(debugOption);
-        command.AddOption(parallelismOption);
+        var command = new Command("clean-geo-data", "Bulk delete geographic reference data")
+        {
+            zipOnlyOption,
+            confirmOption,
+            envOption,
+            verboseOption,
+            debugOption,
+            parallelismOption
+        };
 
-        command.SetHandler(async (bool zipOnly, bool confirm, string? environment, bool verbose, bool debug, int? parallelism) =>
+        command.SetAction(async (parseResult, cancellationToken) =>
         {
             var options = new GlobalOptions
             {
-                Environment = environment,
-                Verbose = verbose,
-                Debug = debug,
-                Parallelism = parallelism
+                Environment = parseResult.GetValue(envOption),
+                Verbose = parseResult.GetValue(verboseOption),
+                Debug = parseResult.GetValue(debugOption),
+                Parallelism = parseResult.GetValue(parallelismOption)
             };
-            Environment.ExitCode = await ExecuteAsync(zipOnly, confirm, options);
-        }, zipOnlyOption, confirmOption, envOption, verboseOption, debugOption, parallelismOption);
+            return await ExecuteAsync(
+                parseResult.GetValue(zipOnlyOption),
+                parseResult.GetValue(confirmOption),
+                options);
+        });
 
         return command;
     }

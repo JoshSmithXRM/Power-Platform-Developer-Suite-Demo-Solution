@@ -24,35 +24,41 @@ public static class GenerateUserMappingCommand
 
     public static Command Create()
     {
-        var command = new Command("generate-user-mapping", "Generate user mapping file for cross-environment migration");
+        var outputOption = new Option<string>("--output")
+        {
+            Description = "Output path for the user mapping XML file",
+            DefaultValueFactory = _ => OutputPath
+        };
 
-        var outputOption = new Option<string>(
-            "--output",
-            () => OutputPath,
-            "Output path for the user mapping XML file");
-
-        var analyzeOnlyOption = new Option<bool>(
-            "--analyze",
-            "Analyze user differences without generating mapping file");
+        var analyzeOnlyOption = new Option<bool>("--analyze")
+        {
+            Description = "Analyze user differences without generating mapping file"
+        };
 
         // Use standardized options from GlobalOptionsExtensions
         var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
         var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
-        command.AddOption(outputOption);
-        command.AddOption(analyzeOnlyOption);
-        command.AddOption(verboseOption);
-        command.AddOption(debugOption);
+        var command = new Command("generate-user-mapping", "Generate user mapping file for cross-environment migration")
+        {
+            outputOption,
+            analyzeOnlyOption,
+            verboseOption,
+            debugOption
+        };
 
-        command.SetHandler(async (string output, bool analyzeOnly, bool verbose, bool debug) =>
+        command.SetAction(async (parseResult, cancellationToken) =>
         {
             var options = new GlobalOptions
             {
-                Verbose = verbose,
-                Debug = debug
+                Verbose = parseResult.GetValue(verboseOption),
+                Debug = parseResult.GetValue(debugOption)
             };
-            Environment.ExitCode = await ExecuteAsync(output, analyzeOnly, options);
-        }, outputOption, analyzeOnlyOption, verboseOption, debugOption);
+            return await ExecuteAsync(
+                parseResult.GetValue(outputOption)!,
+                parseResult.GetValue(analyzeOnlyOption),
+                options);
+        });
 
         return command;
     }

@@ -35,46 +35,52 @@ public static class ImportGeoDataCommand
 {
     public static Command Create()
     {
-        var command = new Command("import-geo-data", "Import geographic data from a ZIP package");
-
-        var dataOption = new Option<string>(
-            aliases: ["--data", "-d"],
-            description: "Input ZIP file path (required)")
+        var dataOption = new Option<string>("--data", "-d")
         {
-            IsRequired = true
+            Description = "Input ZIP file path (required)",
+            Required = true
         };
 
-        var cleanFirstOption = new Option<bool>(
-            "--clean-first",
-            "Run clean-geo-data before import");
+        var cleanFirstOption = new Option<bool>("--clean-first")
+        {
+            Description = "Run clean-geo-data before import"
+        };
 
-        var stripOwnerFieldsOption = new Option<bool>(
-            "--strip-owner-fields",
-            getDefaultValue: () => true,
-            description: "Strip owner fields to avoid user reference errors (default: true)");
+        var stripOwnerFieldsOption = new Option<bool>("--strip-owner-fields")
+        {
+            Description = "Strip owner fields to avoid user reference errors (default: true)",
+            DefaultValueFactory = _ => true
+        };
 
         // Use standardized options from GlobalOptionsExtensions
         var envOption = GlobalOptionsExtensions.CreateEnvironmentOption(isRequired: true);
         var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
         var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
-        command.AddOption(dataOption);
-        command.AddOption(envOption);
-        command.AddOption(cleanFirstOption);
-        command.AddOption(stripOwnerFieldsOption);
-        command.AddOption(verboseOption);
-        command.AddOption(debugOption);
+        var command = new Command("import-geo-data", "Import geographic data from a ZIP package")
+        {
+            dataOption,
+            envOption,
+            cleanFirstOption,
+            stripOwnerFieldsOption,
+            verboseOption,
+            debugOption
+        };
 
-        command.SetHandler(async (string data, string? environment, bool cleanFirst, bool stripOwnerFields, bool verbose, bool debug) =>
+        command.SetAction(async (parseResult, cancellationToken) =>
         {
             var options = new GlobalOptions
             {
-                Environment = environment!,
-                Verbose = verbose,
-                Debug = debug
+                Environment = parseResult.GetValue(envOption)!,
+                Verbose = parseResult.GetValue(verboseOption),
+                Debug = parseResult.GetValue(debugOption)
             };
-            Environment.ExitCode = await ExecuteAsync(data, options, cleanFirst, stripOwnerFields);
-        }, dataOption, envOption, cleanFirstOption, stripOwnerFieldsOption, verboseOption, debugOption);
+            return await ExecuteAsync(
+                parseResult.GetValue(dataOption)!,
+                options,
+                parseResult.GetValue(cleanFirstOption),
+                parseResult.GetValue(stripOwnerFieldsOption));
+        });
 
         return command;
     }

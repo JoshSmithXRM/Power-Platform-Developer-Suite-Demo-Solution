@@ -31,19 +31,20 @@ public static class LoadGeoDataCommand
 
     public static Command Create()
     {
-        var command = new Command("load-geo-data", "Download and load US ZIP code data for volume testing");
+        var limitOption = new Option<int?>("--limit")
+        {
+            Description = "Limit number of ZIP codes to load (for testing)"
+        };
 
-        var limitOption = new Option<int?>(
-            "--limit",
-            "Limit number of ZIP codes to load (for testing)");
+        var skipDownloadOption = new Option<bool>("--skip-download")
+        {
+            Description = "Use cached data file (skip download)"
+        };
 
-        var skipDownloadOption = new Option<bool>(
-            "--skip-download",
-            "Use cached data file (skip download)");
-
-        var statesOnlyOption = new Option<bool>(
-            "--states-only",
-            "Only load states (skip ZIP codes)");
+        var statesOnlyOption = new Option<bool>("--states-only")
+        {
+            Description = "Only load states (skip ZIP codes)"
+        };
 
         // Use standardized options from GlobalOptionsExtensions
         var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
@@ -51,25 +52,32 @@ public static class LoadGeoDataCommand
         var debugOption = GlobalOptionsExtensions.CreateDebugOption();
         var parallelismOption = GlobalOptionsExtensions.CreateParallelismOption();
 
-        command.AddOption(limitOption);
-        command.AddOption(skipDownloadOption);
-        command.AddOption(statesOnlyOption);
-        command.AddOption(envOption);
-        command.AddOption(verboseOption);
-        command.AddOption(debugOption);
-        command.AddOption(parallelismOption);
+        var command = new Command("load-geo-data", "Download and load US ZIP code data for volume testing")
+        {
+            limitOption,
+            skipDownloadOption,
+            statesOnlyOption,
+            envOption,
+            verboseOption,
+            debugOption,
+            parallelismOption
+        };
 
-        command.SetHandler(async (int? limit, bool skipDownload, bool statesOnly, string? environment, bool verbose, bool debug, int? parallelism) =>
+        command.SetAction(async (parseResult, cancellationToken) =>
         {
             var options = new GlobalOptions
             {
-                Environment = environment,
-                Verbose = verbose,
-                Debug = debug,
-                Parallelism = parallelism
+                Environment = parseResult.GetValue(envOption),
+                Verbose = parseResult.GetValue(verboseOption),
+                Debug = parseResult.GetValue(debugOption),
+                Parallelism = parseResult.GetValue(parallelismOption)
             };
-            Environment.ExitCode = await ExecuteAsync(limit, skipDownload, statesOnly, options);
-        }, limitOption, skipDownloadOption, statesOnlyOption, envOption, verboseOption, debugOption, parallelismOption);
+            return await ExecuteAsync(
+                parseResult.GetValue(limitOption),
+                parseResult.GetValue(skipDownloadOption),
+                parseResult.GetValue(statesOnlyOption),
+                options);
+        });
 
         return command;
     }

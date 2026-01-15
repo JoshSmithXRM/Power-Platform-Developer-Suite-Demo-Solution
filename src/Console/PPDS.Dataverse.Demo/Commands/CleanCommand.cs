@@ -15,32 +15,34 @@ public static class CleanCommand
 {
     public static Command Create()
     {
-        var command = new Command("clean", "Remove sample accounts and contacts from Dataverse");
-
-        var forceOption = new Option<bool>(
-            aliases: ["--force", "-f"],
-            description: "Skip confirmation prompt");
+        var forceOption = new Option<bool>("--force", "-f")
+        {
+            Description = "Skip confirmation prompt"
+        };
 
         // Use standardized options from GlobalOptionsExtensions
         var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
         var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
         var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
-        command.AddOption(forceOption);
-        command.AddOption(envOption);
-        command.AddOption(verboseOption);
-        command.AddOption(debugOption);
+        var command = new Command("clean", "Remove sample accounts and contacts from Dataverse")
+        {
+            forceOption,
+            envOption,
+            verboseOption,
+            debugOption
+        };
 
-        command.SetHandler(async (bool force, string? environment, bool verbose, bool debug) =>
+        command.SetAction(async (parseResult, cancellationToken) =>
         {
             var options = new GlobalOptions
             {
-                Environment = environment,
-                Verbose = verbose,
-                Debug = debug
+                Environment = parseResult.GetValue(envOption),
+                Verbose = parseResult.GetValue(verboseOption),
+                Debug = parseResult.GetValue(debugOption)
             };
-            Environment.ExitCode = await ExecuteAsync(force, options);
-        }, forceOption, envOption, verboseOption, debugOption);
+            return await ExecuteAsync(parseResult.GetValue(forceOption), options);
+        });
 
         return command;
     }
