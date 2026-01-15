@@ -44,32 +44,34 @@ public static class ExportGeoDataCommand
 
     public static Command Create()
     {
-        var command = new Command("export-geo-data", "Export geographic data to a portable ZIP package");
-
-        var outputOption = new Option<string?>(
-            aliases: ["--output", "-o"],
-            description: $"Output ZIP file path (default: geo-export.zip)");
+        var outputOption = new Option<string?>("--output", "-o")
+        {
+            Description = "Output ZIP file path (default: geo-export.zip)"
+        };
 
         // Use standardized options from GlobalOptionsExtensions
         var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
         var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
         var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
-        command.AddOption(outputOption);
-        command.AddOption(envOption);
-        command.AddOption(verboseOption);
-        command.AddOption(debugOption);
+        var command = new Command("export-geo-data", "Export geographic data to a portable ZIP package")
+        {
+            outputOption,
+            envOption,
+            verboseOption,
+            debugOption
+        };
 
-        command.SetHandler(async (string? output, string? environment, bool verbose, bool debug) =>
+        command.SetAction(async (parseResult, cancellationToken) =>
         {
             var options = new GlobalOptions
             {
-                Environment = environment ?? "Dev",
-                Verbose = verbose,
-                Debug = debug
+                Environment = parseResult.GetValue(envOption) ?? "Dev",
+                Verbose = parseResult.GetValue(verboseOption),
+                Debug = parseResult.GetValue(debugOption)
             };
-            Environment.ExitCode = await ExecuteAsync(output, options);
-        }, outputOption, envOption, verboseOption, debugOption);
+            return await ExecuteAsync(parseResult.GetValue(outputOption), options);
+        });
 
         return command;
     }

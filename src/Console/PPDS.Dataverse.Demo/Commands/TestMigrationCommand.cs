@@ -39,32 +39,43 @@ public static class TestMigrationCommand
 
     public static Command Create()
     {
-        var command = new Command("test-migration", "End-to-end test of ppds-migrate export/import");
+        var skipSeedOption = new Option<bool>("--skip-seed")
+        {
+            Description = "Skip seeding (use existing data)"
+        };
 
-        var skipSeedOption = new Option<bool>("--skip-seed", "Skip seeding (use existing data)");
-        var skipCleanOption = new Option<bool>("--skip-clean", "Skip cleaning after export");
+        var skipCleanOption = new Option<bool>("--skip-clean")
+        {
+            Description = "Skip cleaning after export"
+        };
 
         // Use standardized options from GlobalOptionsExtensions
         var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
         var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
         var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
-        command.AddOption(skipSeedOption);
-        command.AddOption(skipCleanOption);
-        command.AddOption(envOption);
-        command.AddOption(verboseOption);
-        command.AddOption(debugOption);
+        var command = new Command("test-migration", "End-to-end test of ppds-migrate export/import")
+        {
+            skipSeedOption,
+            skipCleanOption,
+            envOption,
+            verboseOption,
+            debugOption
+        };
 
-        command.SetHandler(async (bool skipSeed, bool skipClean, string? environment, bool verbose, bool debug) =>
+        command.SetAction(async (parseResult, cancellationToken) =>
         {
             var options = new GlobalOptions
             {
-                Environment = environment,
-                Verbose = verbose,
-                Debug = debug
+                Environment = parseResult.GetValue(envOption),
+                Verbose = parseResult.GetValue(verboseOption),
+                Debug = parseResult.GetValue(debugOption)
             };
-            Environment.ExitCode = await ExecuteAsync(skipSeed, skipClean, options);
-        }, skipSeedOption, skipCleanOption, envOption, verboseOption, debugOption);
+            return await ExecuteAsync(
+                parseResult.GetValue(skipSeedOption),
+                parseResult.GetValue(skipCleanOption),
+                options);
+        });
 
         return command;
     }

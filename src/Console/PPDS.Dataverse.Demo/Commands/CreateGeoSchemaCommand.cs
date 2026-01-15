@@ -16,32 +16,34 @@ public static class CreateGeoSchemaCommand
 
     public static Command Create()
     {
-        var command = new Command("create-geo-schema", "Create geographic reference data tables for volume testing");
-
-        var deleteFirstOption = new Option<bool>(
-            "--delete-first",
-            "Delete existing tables before creating (WARNING: destroys data)");
+        var deleteFirstOption = new Option<bool>("--delete-first")
+        {
+            Description = "Delete existing tables before creating (WARNING: destroys data)"
+        };
 
         // Use standardized options from GlobalOptionsExtensions
         var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
         var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
         var debugOption = GlobalOptionsExtensions.CreateDebugOption();
 
-        command.AddOption(deleteFirstOption);
-        command.AddOption(envOption);
-        command.AddOption(verboseOption);
-        command.AddOption(debugOption);
+        var command = new Command("create-geo-schema", "Create geographic reference data tables for volume testing")
+        {
+            deleteFirstOption,
+            envOption,
+            verboseOption,
+            debugOption
+        };
 
-        command.SetHandler(async (bool deleteFirst, string? environment, bool verbose, bool debug) =>
+        command.SetAction(async (parseResult, cancellationToken) =>
         {
             var options = new GlobalOptions
             {
-                Environment = environment,
-                Verbose = verbose,
-                Debug = debug
+                Environment = parseResult.GetValue(envOption),
+                Verbose = parseResult.GetValue(verboseOption),
+                Debug = parseResult.GetValue(debugOption)
             };
-            Environment.ExitCode = await ExecuteAsync(deleteFirst, options);
-        }, deleteFirstOption, envOption, verboseOption, debugOption);
+            return await ExecuteAsync(parseResult.GetValue(deleteFirstOption), options);
+        });
 
         return command;
     }

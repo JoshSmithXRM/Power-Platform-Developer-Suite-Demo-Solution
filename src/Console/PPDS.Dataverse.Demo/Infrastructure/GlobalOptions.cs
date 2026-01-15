@@ -55,16 +55,11 @@ public static class GlobalOptionsExtensions
         string? description = null,
         bool isRequired = false)
     {
-        var option = new System.CommandLine.Option<string?>(
-            aliases: ["--environment", "--env", "-e"],
-            description: description ?? "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.");
-
-        if (isRequired)
+        return new System.CommandLine.Option<string?>("--environment", "--env", "-e")
         {
-            option.IsRequired = true;
-        }
-
-        return option;
+            Description = description ?? "Target environment name (e.g., 'Dev', 'QA'). Uses DefaultEnvironment from config if not specified.",
+            Required = isRequired
+        };
     }
 
     /// <summary>
@@ -73,9 +68,10 @@ public static class GlobalOptionsExtensions
     public static System.CommandLine.Option<bool> CreateVerboseOption(
         string? description = null)
     {
-        return new System.CommandLine.Option<bool>(
-            aliases: ["--verbose", "-v"],
-            description: description ?? "Enable verbose logging (operational: Connecting..., Processing...)");
+        return new System.CommandLine.Option<bool>("--verbose", "-v")
+        {
+            Description = description ?? "Enable verbose logging (operational: Connecting..., Processing...)"
+        };
     }
 
     /// <summary>
@@ -84,9 +80,10 @@ public static class GlobalOptionsExtensions
     public static System.CommandLine.Option<bool> CreateDebugOption(
         string? description = null)
     {
-        return new System.CommandLine.Option<bool>(
-            name: "--debug",
-            description: description ?? "Enable debug logging (diagnostic: parallelism, ceiling, internal state)");
+        return new System.CommandLine.Option<bool>("--debug")
+        {
+            Description = description ?? "Enable debug logging (diagnostic: parallelism, ceiling, internal state)"
+        };
     }
 
     /// <summary>
@@ -95,9 +92,9 @@ public static class GlobalOptionsExtensions
     public static System.CommandLine.Option<int?> CreateParallelismOption(
         string? description = null)
     {
-        return new System.CommandLine.Option<int?>(
-            name: "--parallelism",
-            description: description ?? "Max parallel batches (uses SDK default if not specified)");
+        return new System.CommandLine.Option<int?>("--parallelism")
+        {
+            Description = description ?? "Max parallel batches (uses SDK default if not specified)"
+        };
     }
-
 }

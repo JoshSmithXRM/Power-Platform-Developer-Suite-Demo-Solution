@@ -6,27 +6,24 @@ using PPDS.Dataverse.Demo.Commands;
 
 var rootCommand = new RootCommand("PPDS.Dataverse Demo - Connection pool and data migration demos")
 {
-    Name = "ppds-dataverse-demo"
+    WhoAmICommand.Create(),
+    SeedCommand.Create(),
+    CleanCommand.Create(),
+    TestMigrationCommand.Create(),
+    MigrationFeaturesCommand.Create(),
+    CrossEnvMigrationCommand.Create(),
+    GenerateUserMappingCommand.Create(),
+    CreateGeoSchemaCommand.Create(),
+    LoadGeoDataCommand.Create(),
+    CountGeoDataCommand.Create(),
+    CleanGeoDataCommand.Create(),
+    ExportGeoDataCommand.Create(),
+    ImportGeoDataCommand.Create(),
+    MigrateGeoDataCommand.Create()
 };
 
-// Add subcommands
-rootCommand.AddCommand(WhoAmICommand.Create());
-rootCommand.AddCommand(SeedCommand.Create());
-rootCommand.AddCommand(CleanCommand.Create());
-rootCommand.AddCommand(TestMigrationCommand.Create());
-rootCommand.AddCommand(MigrationFeaturesCommand.Create());
-rootCommand.AddCommand(CrossEnvMigrationCommand.Create());
-rootCommand.AddCommand(GenerateUserMappingCommand.Create());
-rootCommand.AddCommand(CreateGeoSchemaCommand.Create());
-rootCommand.AddCommand(LoadGeoDataCommand.Create());
-rootCommand.AddCommand(CountGeoDataCommand.Create());
-rootCommand.AddCommand(CleanGeoDataCommand.Create());
-rootCommand.AddCommand(ExportGeoDataCommand.Create());
-rootCommand.AddCommand(ImportGeoDataCommand.Create());
-rootCommand.AddCommand(MigrateGeoDataCommand.Create());
-
 // Default behavior: show help if no command specified
-rootCommand.SetHandler(() =>
+rootCommand.SetAction((parseResult, cancellationToken) =>
 {
     Console.WriteLine("PPDS.Dataverse Demo");
     Console.WriteLine("===================");
@@ -66,6 +63,8 @@ rootCommand.SetHandler(() =>
     Console.WriteLine("  Dataverse:DefaultEnvironment                  - Default for pool-based commands");
     Console.WriteLine("  See: docs/guides/LOCAL_DEVELOPMENT_GUIDE.md");
     Console.WriteLine();
+
+    return Task.FromResult(0);
 });
 
-return await rootCommand.InvokeAsync(args);
+return await rootCommand.Parse(args).InvokeAsync();

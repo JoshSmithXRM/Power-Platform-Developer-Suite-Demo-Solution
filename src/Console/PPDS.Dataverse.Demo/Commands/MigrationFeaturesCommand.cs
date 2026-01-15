@@ -19,20 +19,33 @@ public static class MigrationFeaturesCommand
 
     public static Command Create()
     {
-        var command = new Command("demo-features", "Demonstrate migration features");
-        var featureOption = new Option<string>("--feature", getDefaultValue: () => "all");
+        var featureOption = new Option<string>("--feature")
+        {
+            DefaultValueFactory = _ => "all"
+        };
         var envOption = GlobalOptionsExtensions.CreateEnvironmentOption();
         var verboseOption = GlobalOptionsExtensions.CreateVerboseOption();
         var debugOption = GlobalOptionsExtensions.CreateDebugOption();
-        command.AddOption(featureOption);
-        command.AddOption(envOption);
-        command.AddOption(verboseOption);
-        command.AddOption(debugOption);
-        command.SetHandler(async (string feature, string? environment, bool verbose, bool debug) =>
+
+        var command = new Command("demo-features", "Demonstrate migration features")
         {
-            var options = new GlobalOptions { Environment = environment, Verbose = verbose, Debug = debug };
-            Environment.ExitCode = await ExecuteAsync(feature, options);
-        }, featureOption, envOption, verboseOption, debugOption);
+            featureOption,
+            envOption,
+            verboseOption,
+            debugOption
+        };
+
+        command.SetAction(async (parseResult, cancellationToken) =>
+        {
+            var options = new GlobalOptions
+            {
+                Environment = parseResult.GetValue(envOption),
+                Verbose = parseResult.GetValue(verboseOption),
+                Debug = parseResult.GetValue(debugOption)
+            };
+            return await ExecuteAsync(parseResult.GetValue(featureOption)!, options);
+        });
+
         return command;
     }
 
